@@ -9,7 +9,9 @@ from pathlib import Path
 
 from dotenv import dotenv_values, load_dotenv
 
-from .paths import PROJECT_ROOT, project_path
+from .paths import APP_DIR, RESOURCE_DIR, project_path
+
+PROJECT_ROOT = APP_DIR  # where .env lives (tests point this at a temp folder)
 
 
 @dataclass
@@ -48,7 +50,8 @@ def env_path() -> Path:
 
 
 def env_example_path() -> Path:
-    return PROJECT_ROOT / ".env.example"
+    local = PROJECT_ROOT / ".env.example"
+    return local if local.exists() else RESOURCE_DIR / ".env.example"
 
 
 def load_settings() -> Settings:

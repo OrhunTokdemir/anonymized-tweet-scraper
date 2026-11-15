@@ -76,12 +76,12 @@ Follower/following lists exist in twscrape too, but they return accounts, not po
 
 This tab builds a Turkish dataset that mixes offensive-language **candidates** with **control** posts. Use it as raw material for an offensive-language classifier.
 
-- **Lexicon**: `lexicons/tr_offensive.txt` is a seed list in three categories (profanity, insult, identity-based). Extend it. The format is explained at the top of the file. A trailing `$` makes a term whole-word only (`top$` won't match `toplantı`). Without `$`, a term also matches with suffixes (`kelime` matches `kelimeler`).
+- **Lexicon**: `lexicons/tr_offensive.txt` is a seed list of ~150 terms in five categories (profanity, insult, identity-based, curse, threat), including common spellings typed without Turkish letters. Words with a harmless everyday meaning appear only as phrases (a fixed two-word phrase is listed instead of the ambiguous single word). Extend it. The format is explained at the top of the file. A trailing `$` makes a term whole-word only (`top$` won't match `toplantı`). Without `$`, a term also matches with suffixes (`kelime` matches `kelimeler`).
 - **Matching** ignores case (Turkish I/ı, İ/i), leetspeak (`k3l1me`), letters split by dots or spaces (`k.e.l.i.m.e`) and stretched letters (`kelimeeee`). Matching runs on the anonymized text, so a username that contains a listed word never counts as a hit.
 - **Twitter**: lexicon terms are combined into `(t1 OR t2 ...) lang:tr -filter:retweets` queries under X's length limit. The program fetches from every query so one word doesn't dominate. Control tweets come from a generic Turkish query that excludes lexicon words. A control tweet that still contains one moves to the offensive group.
 - **Ekşi**: there is no site-wide full-text search, so the program scans gündem entries and sorts them by lexicon hits.
 - **Offensive %** sets the mix (e.g. 50 means half offensive candidates, half control). Rows are shuffled. Near-duplicate texts are removed by default (important for ML: copies leak between train and test).
-- **Extra CSV columns**: `sample_group` (`offensive_candidate` / `control`), `matched_terms`, `matched_categories`.
+- **Extra CSV columns**: `sample_group` (`offensive_candidate` / `control`), `matched_terms`, `matched_categories`. In this mode the `query` column holds only a short label (`lexicon:tr_offensive` or `control`), not the long `OR` search string.
 - **File name**: `data/YYYYMMDD-HHMMSS_offensive_tw<N>_eksi<M>_<lexicon>.csv`
 
 > **These are weak labels.** A keyword hit is not the same as offensive content (a swear word between friends is often just banter), and many offensive posts contain no listed word (sarcasm, threats, new slang). Have the rows annotated by people, ideally two annotators with an agreement check, before training. The control group is "no lexicon hit", not "verified clean".
@@ -124,6 +124,22 @@ No user ids, usernames, or post ids/URLs are written. `post_hash` is a salted HM
 ## Secrets
 
 `.env`, `accounts.db` (twscrape stores session cookies there), and all `*.csv` files are gitignored. `.env.example` is committed. `AGENTS.md` tells AI agents never to read `.env`. `.claude/settings.json` also blocks Claude Code from reading it.
+
+## Build a standalone executable
+
+```bash
+./build.sh
+```
+
+This needs the `.venv` from Setup. It installs PyInstaller into `.venv` and produces:
+
+| File | What it is |
+| --- | --- |
+| `dist/scraper` | the app as one executable (run `./scraper`, no Python needed) |
+| `dist/LICENSE` | this project's license |
+| `dist/THIRD_PARTY_LICENSES.txt` | licenses of everything bundled inside: Python itself and every runtime package (twscrape, eksiapi, Textual, python-dotenv and their dependencies) |
+
+**Always ship the whole `dist/` folder.** The bundled libraries' licenses (MIT, BSD, Apache-2.0) require their notices to travel with any copy of their code. `build.sh` regenerates the license file on every build (via `tools/third_party_licenses.py`), so it stays in sync when dependencies change. `.env`, `accounts.db` and `data/` are created next to the executable on first use.
 
 ## Tests
 

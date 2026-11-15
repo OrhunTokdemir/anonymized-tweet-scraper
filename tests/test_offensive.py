@@ -67,7 +67,36 @@ class MatchTests(unittest.TestCase):
 
     def test_categories_loaded(self):
         cats = {t.category for t in LEXICON.terms}
-        self.assertEqual(cats, {"profanity", "insult", "identity-based"})
+        self.assertEqual(cats, {"profanity", "insult", "identity-based", "curse", "threat"})
+
+    def test_new_hits(self):
+        cases = {
+            "tam bir serefsiz": "insult",
+            "amına koyim ya": "profanity",
+            "orosbu çocuğu": "profanity",
+            "mal herif yine yaptı": "insult",
+            "seni öldürürüm bak": "threat",
+            "geberesice herif": "curse",
+            "Allah'ın belası": "curse",
+            "yobazlar": "identity-based",
+        }
+        for text, category in cases.items():
+            with self.subTest(text=text):
+                self.assertIn(category, {t.category for t in LEXICON.match(text)})
+
+    def test_false_positive_guards(self):
+        for text in (
+            "sık sık geliyor", "sıkıntılı bir gün", "mal varlığı açıklandı", "alçak tavanlı ev",
+            "bunu götürdüm", "piccolo çaldı", "got it", "aşağılık kompleksi var",
+            "boynuzlu geyik", "yerde pislik var", "ezik domates", "sıkışık trafik",
+            "kekolar değil kek aldım", "malzemeler hazır",
+        ):
+            with self.subTest(text=text):
+                self.assertEqual(self.terms(text), [])
+
+    def test_full_lexicon_queries_fit(self):
+        queries = build_queries([t.raw for t in LEXICON.terms], "since:2026-01-01")
+        self.assertTrue(all(len(q) <= X_QUERY_MAX for q in queries))
 
 
 class QueryTests(unittest.TestCase):

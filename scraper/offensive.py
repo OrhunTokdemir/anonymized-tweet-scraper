@@ -15,7 +15,7 @@ from pathlib import Path
 
 from .anonymize import anonymize_text
 from .models import Post
-from .paths import project_path
+from .paths import resource_path
 
 Progress = Callable[[str], None]
 
@@ -41,6 +41,7 @@ def normalize_tr(text: str) -> str:
     - 3+ repeated letters collapsed (siktirrrr -> siktir)
     """
     text = _PLACEHOLDERS.sub(" ", text)
+    text = re.sub(r"['’`]", "", text)  # allah'ın -> allahın
     text = text.replace("I", "ı").replace("İ", "i").lower()
     text = text.translate(_LEET).replace("@", "a")
     text = _SPACED_LETTERS.sub(lambda m: re.sub(r"[.\-_*\s]", "", m.group()), text)
@@ -71,7 +72,7 @@ def load_lexicon(path: str | Path) -> Lexicon:
     """One term per line. `# category` starts a category. A trailing `$` means
     whole-word only (for short/ambiguous terms such as `aq$` or `göt$`).
     Without `$` a term also matches with Turkish suffixes (şerefsiz -> şerefsizler)."""
-    path = project_path(str(path))
+    path = resource_path(str(path))
     if not path.is_file():
         raise FileNotFoundError(f"Lexicon not found: {path}")
     category = "uncategorized"
@@ -183,7 +184,11 @@ async def collect_twitter(
     offensive: list[Post] = []
     control: list[Post] = []
 
-    def absorb(batch: list[Post]) -> tuple[list[Post], list[Post]]:
+    def absorb(batch: list[Post], label: str) -> tuple[list[Post], list[Post]]:
+        # Short label instead of the long "(a OR b OR ...) lang:tr" search string;
+        # the actual hits are in matched_terms.
+        for p in batch:
+            p.query = label
         batch = [p for p in batch if p.raw_id not in seen_ids]
         seen_ids.update(p.raw_id for p in batch)
         if exclude_duplicates:
@@ -201,14 +206,14 @@ async def collect_twitter(
                 break
             progress(f"Offensive query {i}/{len(queries)}")
             off, _ = absorb(await fetch_search(api, q, per_query, "Latest", settings, progress,
-                                               method="offensive-search"))
+                                               method="offensive-search"), f"lexicon:{lexicon.name}")
             offensive.extend(off)  # posts the local matcher didn't confirm are dropped
 
     if n_ctrl > 0:
         progress("Control query")
         q = build_control_query(search_terms, extra)
         off, ctrl = absorb(await fetch_search(api, q, math.ceil(n_ctrl * 1.2) + 5, "Latest",
-                                              settings, progress, method="control-search"))
+                                              settings, progress, method="control-search"), "control")
         offensive.extend(off)  # control posts that still contain lexicon words
         control.extend(ctrl)
 

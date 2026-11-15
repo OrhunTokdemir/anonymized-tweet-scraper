@@ -27,5 +27,7 @@ Instructions for AI coding agents (Claude Code, Codex, Cursor, Copilot, etc.) wo
 - `scraper/anonymize.py`: redaction rules
 - `scraper/output.py`: CSV writer and file naming
 - `tests/`: run with `python -m unittest discover -s tests`
+- `build.sh` + `run_scraper.py` + `requirements-build.txt`: PyInstaller build. `tools/third_party_licenses.py` writes `dist/THIRD_PARTY_LICENSES.txt` from the runtime dependency tree. Never ship a build without it.
+- `scraper/paths.py`: `APP_DIR` (writable: .env, data/, accounts.db) vs `RESOURCE_DIR` (bundled read-only files). Use these instead of `__file__` so frozen builds work.
 
 Core modules report progress through a `progress(str)` callback; never `print()` from them (it would corrupt the TUI).
