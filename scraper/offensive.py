@@ -36,9 +36,9 @@ def normalize_tr(text: str) -> str:
     """Normalize Turkish text for matching (never used for output).
 
     - Turkish-aware lowercasing (I -> ı, İ -> i)
-    - leetspeak (s1kt1r -> siktir, @ is handled after placeholders are removed)
-    - spaced/dotted single letters joined (a.q -> aq, s i k -> sik)
-    - 3+ repeated letters collapsed (siktirrrr -> siktir)
+    - leetspeak (k3l1me -> kelime, @ is handled after placeholders are removed)
+    - spaced/dotted single letters joined (k.e.l.i.m.e -> kelime, k e l i m e -> kelime)
+    - 3+ repeated letters collapsed (kelimeeee -> kelime)
     """
     text = _PLACEHOLDERS.sub(" ", text)
     text = re.sub(r"['’`]", "", text)  # allah'ın -> allahın
@@ -70,8 +70,8 @@ class Lexicon:
 
 def load_lexicon(path: str | Path) -> Lexicon:
     """One term per line. `# category` starts a category. A trailing `$` means
-    whole-word only (for short/ambiguous terms such as `aq$` or `göt$`).
-    Without `$` a term also matches with Turkish suffixes (şerefsiz -> şerefsizler)."""
+    whole-word only (for short/ambiguous terms, e.g. `top$` won't match "toplantı").
+    Without `$` a term also matches with Turkish suffixes (kelime -> kelimeler)."""
     path = resource_path(str(path))
     if not path.is_file():
         raise FileNotFoundError(f"Lexicon not found: {path}")
