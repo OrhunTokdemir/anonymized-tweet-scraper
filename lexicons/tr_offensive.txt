@@ -1,0 +1,73 @@
+# Turkish offensive-language seed lexicon
+# Format:
+#   - one term per line, lowercase
+#   - a line starting with "#" sets the category for the terms below it
+#     (the first lines here are just comments; the last "#" line before a
+#     term is its category)
+#   - a trailing "$" means whole-word only: use it for short or ambiguous
+#     terms (e.g. "göt$" so that "götürmek" doesn't match)
+#   - without "$" a term also matches with suffixes (şerefsiz -> şerefsizler)
+#   - matching ignores case, leetspeak (s1kt1r), dots/spaces between single
+#     letters (a.q, o.ç) and stretched letters (siktirrrr)
+# This is a SEED list. Extend it for your project; keyword hits are weak labels.
+
+# profanity
+amk
+amq$
+aq$
+mk$
+mq$
+amına
+amına koyayım
+amcık
+siktir
+sikerim
+sikeyim
+siktiğim
+sikik
+sikiş
+yarrak
+yarak$
+dalyarak
+göt$
+götveren
+götlek
+bok$
+boktan
+orospu
+oç$
+kahpe
+pezevenk
+kaltak
+sürtük
+kevaşe
+fahişe
+piç
+puşt
+
+# insult
+şerefsiz
+namussuz
+haysiyetsiz
+yavşak
+gerizekalı
+geri zekalı
+salak
+aptal
+ahmak
+dangalak
+mankafa
+beyinsiz
+embesil
+dallama
+denyo
+lavuk
+hödük
+pislik
+it oğlu it
+döl israfı
+ezik
+
+# identity-based
+ibne
+gavur
