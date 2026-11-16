@@ -156,7 +156,8 @@ def read_topic(
     emit: Emit, progress: Progress,
 ) -> None:
     """Read up to `take` entries of one topic into `emit`; falls back to
-    chronological when `today` has nothing. API errors skip the topic's rest."""
+    chronological when a filtered order (`today`, `popular`) has nothing.
+    API errors skip the topic's rest."""
     got = 0
 
     def counted(batch: list[Post]) -> None:
@@ -166,7 +167,9 @@ def read_topic(
 
     try:
         _entries_from_topic(client, topic_id, take, order, method, query, counted)
-        if got == 0 and order == "today":  # topic may have no entries today
+        # `today` is empty for quiet topics, and `popular` (şükela) is empty for
+        # topics without enough favorited entries, which is most small/old ones
+        if got == 0 and order != "chronological":
             _entries_from_topic(client, topic_id, take, "chronological", method, query, counted)
     except EksiApiError as exc:
         # pages emitted before the error are already saved
