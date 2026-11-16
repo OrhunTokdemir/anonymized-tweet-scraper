@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import os
+import re
 import threading
 from collections.abc import Callable
 
@@ -32,7 +33,9 @@ from textual.widgets import (
 from . import envfile
 from .config import Settings, env_example_path, env_path, load_settings
 from .eksi import EKSI_METHODS, EKSI_ORDERS
-from .output import CsvStream
+from pathlib import Path
+
+from .output import CsvStream, list_outputs
 from .twitter import TW_METHODS, ScrapeError
 
 ACCOUNTS_HELP = (
@@ -54,6 +57,26 @@ def row(label: str, widget: Widget, *, row_id: str | None = None, label_id: str 
     return Horizontal(Label(label, classes="field-label", id=label_id), widget, classes="row", id=row_id)
 
 
+NEW_FILE = "__new__"
+_NEXT_FREE_RE = re.compile(r"Next available at (\S+ )?(\d{1,2}:\d{2})")
+
+
+def library_log_text(level: str, message: str) -> str | None:
+    """What (if anything) to show in the log panel for a twscrape log record.
+
+    Warnings and errors always pass. Of the INFO records only the "all accounts
+    rate-limited, waiting" one passes; otherwise a long wait looks like a freeze.
+    """
+    if level in ("WARNING", "ERROR", "CRITICAL"):
+        return f"[dim]twscrape {level.lower()}: {escape(message)}[/dim]"
+    if level == "INFO" and message.startswith("No account available"):
+        m = _NEXT_FREE_RE.search(message)
+        when = f"next free at {m.group(2)} UTC" if m else escape(message)
+        return (f"[yellow]X rate limit: all accounts are busy ({when}). "
+                f"The run continues by itself.[/yellow]")
+    return None
+
+
 def int_value(app: App, selector: str) -> int:
     raw = app.query_one(selector, Input).value.strip()
     return int(raw) if raw.lstrip("-").isdigit() else 0
@@ -65,6 +88,7 @@ class ScraperApp(App):
     SUB_TITLE = "Twitter/X + Ekşi Sözlük"
     BINDINGS = [
         ("ctrl+s", "start", "Start"),
+        ("ctrl+x", "stop", "Stop run"),
         ("ctrl+l", "clear_log", "Clear log"),
     ]
 
@@ -106,8 +130,12 @@ class ScraperApp(App):
                             [(label, value) for value, label in EKSI_ORDERS.items()],
                             value="popular", allow_blank=False, id="eksi-order"))
                         yield row("Count", Input("0", type="integer", id="eksi-count"))
+                    with Vertical(classes="group"):
+                        yield row("Output", Select([("New file", NEW_FILE)], value=NEW_FILE,
+                                                   allow_blank=False, id="scrape-output"))
                     with Horizontal(classes="actions"):
                         yield Checkbox("Shuffle rows", id="shuffle")
+                        yield Button("Stop", variant="error", id="stop-scrape", disabled=True)
                         yield Button("Start scraping", variant="primary", id="start-scrape")
 
             with TabPane("Offensive batch", id="tab-offensive"):
@@ -121,7 +149,10 @@ class ScraperApp(App):
                             os.getenv("OFFENSIVE_LEXICON", "lexicons/tr_offensive.txt"), id="off-lexicon"))
                         yield row("Extra filter", Input(placeholder="since:2026-01-01 (optional)", id="off-extra"))
                         yield Checkbox("Exclude near-duplicate texts", value=True, id="off-dedupe")
+                        yield row("Output", Select([("New file", NEW_FILE)], value=NEW_FILE,
+                                                   allow_blank=False, id="off-output"))
                     with Horizontal(classes="actions"):
+                        yield Button("Stop", variant="error", id="stop-offensive", disabled=True)
                         yield Button("Build offensive batch", variant="warning", id="start-offensive")
 
             with TabPane("Accounts", id="tab-accounts"):
@@ -152,19 +183,23 @@ class ScraperApp(App):
 
         def sink(message) -> None:
             record = message.record
-            text = f"[dim]twscrape {record['level'].name.lower()}: {escape(record['message'])}[/dim]"
+            text = library_log_text(record["level"].name, record["message"])
+            if text is None:
+                return
             if threading.get_ident() == app_thread:
                 self.say(text)
             else:
                 self.call_from_thread(self.say, text)
 
         logger.remove()
-        logger.add(sink, level="WARNING", format="{message}")
+        logger.add(sink, level="INFO", format="{message}")
 
     def on_mount(self) -> None:
         self.route_library_logs()
         self.query_one("#accounts-table", DataTable).add_columns("Username", "State", "Requests", "Last error")
-        self.say("[b]Ready.[/b] Fill in the form and press [b]Start[/b] (ctrl+s). Quit with ctrl+q.")
+        self.refresh_outputs()
+        self.say("[b]Ready.[/b] Fill in the form and press [b]Start[/b] (ctrl+s). "
+                 "Stop a run with ctrl+x (keeps what was collected). Quit with ctrl+q.")
         if not self.settings.accounts:
             self.say("[yellow]No Twitter accounts yet: only Ekşi works. Add one in the Accounts tab.[/yellow]")
 
@@ -177,8 +212,24 @@ class ScraperApp(App):
 
     def set_busy(self, busy: bool) -> None:
         self.busy = busy
-        for bid in ("#start-scrape", "#start-offensive"):
-            self.query_one(bid, Button).disabled = busy
+        for bid in ("#start-scrape", "#start-offensive", "#scrape-output", "#off-output"):
+            self.query_one(bid).disabled = busy
+        for bid in ("#stop-scrape", "#stop-offensive"):
+            self.query_one(bid, Button).disabled = not busy
+
+    def refresh_outputs(self, select_path: Path | None = None) -> None:
+        """Fill the Output selects with files a run can append to."""
+        for sel_id, offensive in (("#scrape-output", False), ("#off-output", True)):
+            select = self.query_one(sel_id, Select)
+            files = list_outputs(self.settings.output_dir, offensive)
+            current = select_path if select_path in files else (
+                Path(str(select.value)) if select.value != NEW_FILE else None)
+            select.set_options([("New file", NEW_FILE)] + [(f"Append to {f.name}", str(f)) for f in files])
+            select.value = str(current) if current in files else NEW_FILE
+
+    def append_target(self, sel_id: str) -> Path | None:
+        value = self.query_one(sel_id, Select).value
+        return Path(str(value)) if value not in (NEW_FILE, Select.BLANK, None) else None
 
     async def get_api(self):
         async with self._api_lock:
@@ -187,12 +238,22 @@ class ScraperApp(App):
                 self._api = await build_api(self.settings, self.say)
             return self._api
 
-    def open_stream(self, *terms: str, prefix: str = "", shuffle: bool = False) -> CsvStream | None:
+    def open_stream(
+        self, *terms: str, prefix: str = "", shuffle: bool = False, append_to: Path | None = None,
+    ) -> CsvStream | None:
+        if append_to and not append_to.is_file():
+            self.say(f"[red]{escape(append_to.name)} no longer exists. Pick another Output.[/red]")
+            self.refresh_outputs()
+            return None
         try:
-            stream = CsvStream(self.settings.output_dir, *terms, prefix=prefix, shuffle=shuffle)
+            stream = CsvStream(self.settings.output_dir, *terms, prefix=prefix, shuffle=shuffle,
+                               append_to=append_to)
         except OSError as exc:
             self.say(f"[red]Cannot write to {escape(str(self.settings.output_dir))}: {exc}[/red]")
             return None
+        if append_to:
+            self.say(f"Appending to [u]{escape(append_to.name)}[/u] "
+                     f"({sum(stream.base_counts.values())} rows already in it).")
         self.say(f"[dim]Writing rows as they arrive to {escape(str(stream.partial_path))}[/dim]")
         return stream
 
@@ -210,6 +271,15 @@ class ScraperApp(App):
             what = "[yellow b]Run stopped early; saved[/yellow b]" if incomplete else "[green b]Wrote[/green b]"
             self.say(f"{what} {stream.total} anonymized posts ({n_tw} tweets, {n_eksi} entries) "
                      f"to [u]{escape(str(path))}[/u]")
+            if stream.append_to:
+                fc, fg = stream.file_counts(), stream.file_groups()
+                line = (f"File now has {sum(fc.values())} rows ({fc.get('twitter', 0)} tweets, "
+                        f"{fc.get('eksisozluk', 0)} entries)")
+                if fg:
+                    line += (f"; offensive candidates {fg.get('offensive_candidate', 0)}, "
+                             f"control {fg.get('control', 0)}")
+                self.say(line + ".")
+            self.refresh_outputs(select_path=path if stream.append_to else None)
         except Exception:  # app may be shutting down (ctrl+q during a run)
             pass
 
@@ -247,6 +317,11 @@ class ScraperApp(App):
     @on(Button.Pressed, "#start-offensive")
     def start_offensive_pressed(self) -> None:
         self.run_offensive()
+
+    @on(Button.Pressed, "#stop-scrape")
+    @on(Button.Pressed, "#stop-offensive")
+    def stop_pressed(self) -> None:
+        self.action_stop()
 
     @on(Button.Pressed, "#load-trends")
     def load_trends_pressed(self) -> None:
@@ -294,6 +369,13 @@ class ScraperApp(App):
         else:
             self.run_scrape()
 
+    def action_stop(self) -> None:
+        if not self.busy:
+            self.say("[dim]Nothing is running.[/dim]")
+            return
+        self.say("[yellow]Stopping… saving what was collected.[/yellow]")
+        self.workers.cancel_group(self, "job")
+
     def action_clear_log(self) -> None:
         self.query_one("#log", RichLog).clear()
 
@@ -326,6 +408,7 @@ class ScraperApp(App):
         stream = self.open_stream(
             tw_term if tw_count > 0 else "", (eksi_query or eksi_method) if eksi_count > 0 else "",
             shuffle=self.query_one("#shuffle", Checkbox).value,
+            append_to=self.append_target("#scrape-output"),
         )
         if stream is None:
             return
@@ -351,7 +434,7 @@ class ScraperApp(App):
         except Exception as exc:  # keep the app alive, show what happened
             self.say(f"[red]Error: {exc.__class__.__name__}: {exc}[/red]")
         finally:
-            # also runs on cancel (ctrl+q): whatever was collected is kept
+            # also runs on Stop (ctrl+x) and quit (ctrl+q): whatever was collected is kept
             try:
                 self.report(stream, incomplete)
             finally:
@@ -378,10 +461,13 @@ class ScraperApp(App):
             self.say(f"[red]{exc}[/red]")
             return
 
-        stream = self.open_stream(lexicon.name, prefix="offensive", shuffle=True)  # shuffle: avoid ordering bias when annotating
+        # shuffle: avoid ordering bias when annotating
+        stream = self.open_stream(lexicon.name, prefix="offensive", shuffle=True,
+                                  append_to=self.append_target("#off-output"))
         if stream is None:
             return
 
+        existing = stream.existing_texts() if dedupe_on else []  # skip posts already in the file
         self.set_busy(True)
         incomplete = True
         try:
@@ -389,11 +475,13 @@ class ScraperApp(App):
             if n_tw > 0:
                 off, ctrl = split_counts(n_tw, ratio)
                 api = await self.get_api()
-                await collect_twitter(api, lexicon, off, ctrl, extra, self.settings, self.say, stream.add, dedupe_on)
+                await collect_twitter(api, lexicon, off, ctrl, extra, self.settings, self.say, stream.add,
+                                      dedupe_on, existing)
             if n_eksi > 0:
                 off, ctrl = split_counts(n_eksi, ratio)
                 await asyncio.to_thread(
-                    collect_eksi, lexicon, off, ctrl, self.settings, self.thread_progress(), stream.add, dedupe_on
+                    collect_eksi, lexicon, off, ctrl, self.settings, self.thread_progress(), stream.add,
+                    dedupe_on, existing,
                 )
             incomplete = False
         except ScrapeError as exc:

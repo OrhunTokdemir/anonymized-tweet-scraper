@@ -9,7 +9,7 @@ from __future__ import annotations
 import hashlib
 import math
 import re
-from collections.abc import Callable
+from collections.abc import Callable, Iterable
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -144,7 +144,12 @@ def split_counts(total: int, ratio_pct: int) -> tuple[int, int]:
 
 
 def text_fingerprint(post: Post) -> str:
-    return hashlib.sha1(normalize_tr(anonymize_text(post.text, post.names)).encode()).hexdigest()
+    return anonymized_fingerprint(anonymize_text(post.text, post.names))
+
+
+def anonymized_fingerprint(text: str) -> str:
+    """Fingerprint of already-anonymized text (e.g. rows of an existing CSV)."""
+    return hashlib.sha1(normalize_tr(text).encode()).hexdigest()
 
 
 def classify(posts: list[Post], lexicon: Lexicon) -> tuple[list[Post], list[Post]]:
@@ -205,12 +210,14 @@ class _Absorber:
     (same id, and optionally same anonymized text), tags them with lexicon
     hits, and hands them to the quota."""
 
-    def __init__(self, lexicon: Lexicon, quota: _Quota, exclude_duplicates: bool):
+    def __init__(self, lexicon: Lexicon, quota: _Quota, exclude_duplicates: bool,
+                 seen_texts: Iterable[str] = ()):
         self.lexicon = lexicon
         self.quota = quota
         self.exclude_duplicates = exclude_duplicates
         self.seen_ids: set[str] = set()
-        self.seen_text: set[str] = set()
+        # texts already in the file being appended to
+        self.seen_text: set[str] = {anonymized_fingerprint(t) for t in seen_texts} if exclude_duplicates else set()
         self.scanned = 0
 
     def __call__(self, label: str, controls_wanted: bool, method: str | None = None) -> Emit:
@@ -235,13 +242,23 @@ class _Absorber:
 
 async def collect_twitter(
     api, lexicon: Lexicon, n_off: int, n_ctrl: int, extra: str, settings, progress: Progress,
-    emit: Emit, exclude_duplicates: bool = True,
+    emit: Emit, exclude_duplicates: bool = True, seen_texts: Iterable[str] = (),
 ) -> int:
-    """Accepted posts go to `emit` chunk by chunk; -> number emitted."""
-    from .twitter import fetch_search
+    """Accepted posts go to `emit` chunk by chunk; -> number emitted.
+    `seen_texts`: anonymized texts already in the output file (skipped as duplicates)."""
+    from .twitter import AccountWatch, fetch_search
 
     quota = _Quota(n_off, n_ctrl, emit)
-    absorber = _Absorber(lexicon, quota, exclude_duplicates)
+    absorber = _Absorber(lexicon, quota, exclude_duplicates, seen_texts)
+    watch = AccountWatch(api, progress)
+
+    def totals() -> str:
+        return (f"offensive {quota.have[OFFENSIVE]:,}/{n_off:,}, "
+                f"control {quota.have[CONTROL]:,}/{n_ctrl:,}")
+
+    def labelled(prefix: str) -> Progress:
+        # fetch_search reports "Twitter: x/limit" for *this* query only
+        return lambda m: progress(f"{prefix} · {m}" if m.startswith("Twitter:") else m)
 
     search_terms = [t.raw for t in lexicon.terms]
     if n_off > 0:
@@ -252,16 +269,18 @@ async def collect_twitter(
         for i, q in enumerate(queries, 1):
             if quota.full(OFFENSIVE):
                 break
-            progress(f"Offensive query {i}/{len(queries)}")
-            await fetch_search(api, q, per_query, "Latest", settings, progress,
-                               absorber(f"lexicon:{lexicon.name}", False), method="offensive-search")
+            progress(f"Offensive query {i}/{len(queries)} (so far: {totals()})")
+            await fetch_search(api, q, per_query, "Latest", settings, labelled(f"query {i}/{len(queries)}"),
+                               absorber(f"lexicon:{lexicon.name}", False), method="offensive-search",
+                               watch=watch)
 
     if n_ctrl > 0:
-        progress("Control query")
+        progress(f"Control query (so far: {totals()})")
         q = build_control_query(search_terms, extra)
-        await fetch_search(api, q, math.ceil(n_ctrl * 1.2) + 5, "Latest", settings, progress,
-                           absorber("control", True), method="control-search")
+        await fetch_search(api, q, math.ceil(n_ctrl * 1.2) + 5, "Latest", settings, labelled("control"),
+                           absorber("control", True), method="control-search", watch=watch)
 
+    progress(f"Twitter done: {totals()}")
     if quota.have[OFFENSIVE] < n_off:
         progress(f"Only {quota.have[OFFENSIVE]}/{n_off} offensive candidates found on Twitter.")
     if quota.have[CONTROL] < n_ctrl:
@@ -275,7 +294,7 @@ EKSI_TITLE_PAGES = 3  # title-search result pages per lexicon term
 
 def collect_eksi(
     lexicon: Lexicon, n_off: int, n_ctrl: int, settings, progress: Progress,
-    emit: Emit, exclude_duplicates: bool = True,
+    emit: Emit, exclude_duplicates: bool = True, seen_texts: Iterable[str] = (),
 ) -> int:
     """Ekşi has no full-text search across the site, so topics are pulled from:
 
@@ -289,7 +308,7 @@ def collect_eksi(
     from .eksi import open_client, read_topic, topic_pool
 
     quota = _Quota(n_off, n_ctrl, emit)
-    absorber = _Absorber(lexicon, quota, exclude_duplicates)
+    absorber = _Absorber(lexicon, quota, exclude_duplicates, seen_texts)
     max_scan = max(5000, 40 * (n_off + n_ctrl))
     n_topics = 0
 

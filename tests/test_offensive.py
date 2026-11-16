@@ -145,5 +145,19 @@ class ClassifyTests(unittest.TestCase):
         self.assertEqual(len(dedupe(posts, set())), 2)
 
 
+
+class ExistingTextDedupeTests(unittest.TestCase):
+    def test_text_already_in_file_is_skipped(self):
+        from scraper.offensive import _Absorber, _Quota, Lexicon, Term
+        import re as _re
+        lex = Lexicon("t", [Term("kotu", "kotu", "c", False, _re.compile(r"(?<!\w)kotu"))])
+        got = []
+        quota = _Quota(10, 10, got.extend)
+        absorb = _Absorber(lex, quota, True, seen_texts=["bu kotu bir şey"])("lbl", True)
+        absorb([Post(source="twitter", method="m", query="q", text="Bu KOTU bir şey", raw_id="1"),
+                Post(source="twitter", method="m", query="q", text="yepyeni", raw_id="2")])
+        self.assertEqual([p.text for p in got], ["yepyeni"])
+
+
 if __name__ == "__main__":
     unittest.main()

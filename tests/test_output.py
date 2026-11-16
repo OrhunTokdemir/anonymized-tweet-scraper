@@ -103,5 +103,82 @@ class NameRedactorTests(unittest.TestCase):
         self.assertEqual(r.sub("ssg haklı"), f"{NAME_TOKEN} haklı")
 
 
+
+class AppendTests(unittest.TestCase):
+    def setUp(self):
+        self._tmp = tempfile.TemporaryDirectory()
+        self.dir = self._tmp.name
+
+    def tearDown(self):
+        self._tmp.cleanup()
+
+    def make_file(self, posts, **kw):
+        s = CsvStream(self.dir, "lex", prefix="offensive", **kw)
+        s.add(posts)
+        return s.finish()
+
+    def test_append_merges_and_renames_with_new_counts(self):
+        old = self.make_file([post("eski 1"), post("eski 2", source="eksisozluk")])
+        s = CsvStream(self.dir, "lex", prefix="offensive", append_to=old)
+        s.add([post("yeni 1"), post("yeni 2")])
+        new = s.finish()
+        self.assertRegex(new.name, r"_offensive_tw3_eksi1_lex\.csv$")
+        self.assertEqual(new.name[:15], old.name[:15])  # original timestamp kept
+        self.assertEqual([p.name for p in Path(self.dir).iterdir()], [new.name])  # old one replaced
+        rows = read_rows(new)
+        self.assertEqual([r["text"] for r in rows], ["eski 1", "eski 2", "yeni 1", "yeni 2"])
+        self.assertEqual([r["row"] for r in rows], ["1", "2", "3", "4"])
+
+    def test_new_names_are_redacted_from_old_rows(self):
+        old = self.make_file([post("Ahmet Yılmaz yine yazmış")])
+        s = CsvStream(self.dir, "lex", prefix="offensive", append_to=old)
+        s.add([post("ikinci", names={"Ahmet Yılmaz"})])
+        rows = read_rows(s.finish())
+        self.assertEqual(rows[0]["text"], f"{NAME_TOKEN} yine yazmış")
+
+    def test_original_untouched_until_finish(self):
+        old = self.make_file([post("eski")])
+        before = old.read_bytes()
+        s = CsvStream(self.dir, "lex", prefix="offensive", append_to=old)
+        s.add([post("yeni")])
+        s.close()  # e.g. the app was killed: finish() never ran
+        self.assertEqual(old.read_bytes(), before)
+
+    def test_empty_run_leaves_file_alone(self):
+        old = self.make_file([post("eski")])
+        s = CsvStream(self.dir, "lex", prefix="offensive", append_to=old)
+        self.assertIsNone(s.finish())
+        self.assertTrue(old.exists())
+
+    def test_merges_file_with_different_columns(self):
+        odd = Path(self.dir) / "20260101-000000_offensive_tw1_eksi0_lex.csv"
+        odd.write_text("row,source,text,post_hash\n1,twitter,eski,abc\n", encoding="utf-8-sig")
+        s = CsvStream(self.dir, "lex", prefix="offensive", append_to=odd)
+        s.add([post("yeni")])
+        new = s.finish()
+        rows = read_rows(new)
+        self.assertEqual([r["text"] for r in rows], ["eski", "yeni"])
+        self.assertNotIn("post_hash", rows[0])
+        self.assertRegex(new.name, r"_tw2_eksi0_")
+
+    def test_counts_groups_and_existing_texts(self):
+        old = self.make_file([post("a", group="control"), post("b", group="offensive_candidate")])
+        s = CsvStream(self.dir, "lex", prefix="offensive", append_to=old)
+        s.add([post("c", group="control")])
+        self.assertEqual(s.file_groups(), {"control": 2, "offensive_candidate": 1})
+        self.assertEqual(sorted(s.existing_texts()), ["a", "b"])
+        s.finish()
+
+    def test_list_outputs_separates_kinds_and_skips_partial(self):
+        from scraper.output import list_outputs
+        off = self.make_file([post("a")])
+        s = CsvStream(self.dir, "q")
+        s.add([post("b")])
+        plain = s.finish()
+        CsvStream(self.dir, "pending").close()  # leaves a .partial.csv
+        self.assertEqual(list_outputs(self.dir, offensive=True), [off])
+        self.assertEqual(list_outputs(self.dir, offensive=False), [plain])
+
+
 if __name__ == "__main__":
     unittest.main()

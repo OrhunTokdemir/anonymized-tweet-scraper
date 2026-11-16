@@ -48,6 +48,29 @@ def build_filename(
     return Path(output_dir) / f"{stamp}{prefix}_tw{n_tw}_eksi{n_eksi}_{slug}{suffix}.csv"
 
 
+_NAME_RE = re.compile(
+    r"^(?P<stamp>\d{8}-\d{6})(?P<prefix>_[a-z]+)?_tw\d+_eksi\d+_(?P<slug>.+?)(?:_incomplete)?\.csv$"
+)
+
+
+def list_outputs(output_dir: str, offensive: bool) -> list[Path]:
+    """Finished CSVs that a run can append to, newest first. Offensive batches
+    and normal scrapes are kept apart (they have different column use)."""
+    folder = Path(output_dir)
+    if not folder.is_dir():
+        return []
+    files = [
+        f for f in folder.glob("*.csv")
+        if not f.name.endswith(".partial.csv") and ("_offensive_" in f.name) == offensive
+    ]
+    return sorted(files, key=lambda f: f.stat().st_mtime, reverse=True)
+
+
+def _read_rows(path: Path) -> list[dict]:
+    with path.open(newline="", encoding="utf-8-sig") as fh:
+        return list(csv.DictReader(fh))
+
+
 class StreamClosed(RuntimeError):
     """Raised by CsvStream.add after finish(); stops fetchers still running in a
     worker thread (e.g. Ekşi) once the run has been cancelled."""
@@ -61,9 +84,16 @@ class CsvStream:
     redaction with the full name set (so a name first seen late in the run is
     also removed from earlier rows), optionally shuffles, and renames the file
     to the usual `..._tw<N>_eksi<M>_...` form. Raw text never reaches disk.
+
+    With `append_to`, the new rows are merged into that existing CSV at
+    finish(). The existing file is not touched before then, so a crash or a
+    stop mid-run leaves it as it was.
     """
 
-    def __init__(self, output_dir: str, *terms: str, prefix: str = "", shuffle: bool = False):
+    def __init__(
+        self, output_dir: str, *terms: str, prefix: str = "", shuffle: bool = False,
+        append_to: Path | None = None,
+    ):
         self.output_dir = output_dir
         self.terms = terms
         self.prefix = prefix
@@ -73,6 +103,17 @@ class CsvStream:
         self.groups: dict[str, int] = {}
         self._redactor = NameRedactor()  # every name seen so far in this run
         self._lock = threading.Lock()
+
+        # rows already in the file we append to (counted, not kept in memory)
+        self.append_to = Path(append_to) if append_to else None
+        self.base_counts = {"twitter": 0, "eksisozluk": 0}
+        self.base_groups: dict[str, int] = {}
+        if self.append_to:
+            for r in _read_rows(self.append_to):
+                src = r.get("source", "")
+                self.base_counts[src] = self.base_counts.get(src, 0) + 1
+                if g := r.get("sample_group"):
+                    self.base_groups[g] = self.base_groups.get(g, 0) + 1
 
         pre = f"_{prefix}" if prefix else ""
         slug = slugify(*(anonymize_query(t) for t in terms))
@@ -86,7 +127,21 @@ class CsvStream:
 
     @property
     def total(self) -> int:
+        """Rows added in this run."""
         return sum(self.counts.values())
+
+    def file_counts(self) -> dict[str, int]:
+        """Rows per source in the finished file (existing + this run)."""
+        keys = set(self.counts) | set(self.base_counts)
+        return {k: self.counts.get(k, 0) + self.base_counts.get(k, 0) for k in keys}
+
+    def file_groups(self) -> dict[str, int]:
+        keys = set(self.groups) | set(self.base_groups)
+        return {k: self.groups.get(k, 0) + self.base_groups.get(k, 0) for k in keys}
+
+    def existing_texts(self) -> list[str]:
+        """Anonymized texts already in the file we append to (for de-duplication)."""
+        return [r.get("text", "") for r in _read_rows(self.append_to)] if self.append_to else []
 
     def __enter__(self) -> "CsvStream":
         return self
@@ -118,28 +173,39 @@ class CsvStream:
             if self.total == 0:
                 self.partial_path.unlink(missing_ok=True)
                 return None
-            with self.partial_path.open(newline="", encoding="utf-8-sig") as fh:
-                rows = list(csv.DictReader(fh))
+            rows = (_read_rows(self.append_to) if self.append_to else []) + _read_rows(self.partial_path)
             if self.shuffle:
                 random.shuffle(rows)
-            final = build_filename(
-                self.output_dir, self.counts.get("twitter", 0), self.counts.get("eksisozluk", 0),
-                *self.terms, prefix=self.prefix, stamp=self.stamp,
-                suffix="_incomplete" if incomplete else "",
-            )
+            final = self._final_path(incomplete)
             tmp = final.with_suffix(".tmp")
             with tmp.open("w", newline="", encoding="utf-8-sig") as fh:
-                writer = csv.DictWriter(fh, fieldnames=CSV_COLUMNS)
+                writer = csv.DictWriter(fh, fieldnames=CSV_COLUMNS, restval="", extrasaction="ignore")
                 writer.writeheader()
                 for i, r in enumerate(rows, start=1):
                     r["row"] = i
-                    # names first seen after this row was written
-                    r["text"] = self._redactor.sub(r["text"])
-                    r["query"] = self._redactor.sub(r["query"])
+                    # names first seen after this row was written (old rows too)
+                    r["text"] = self._redactor.sub(r.get("text") or "")
+                    r["query"] = self._redactor.sub(r.get("query") or "")
                     writer.writerow(r)
             tmp.replace(final)
+            if self.append_to and self.append_to != final:
+                self.append_to.unlink(missing_ok=True)  # only after the merged file is in place
             self.partial_path.unlink(missing_ok=True)
             return final
+
+    def _final_path(self, incomplete: bool) -> Path:
+        suffix = "_incomplete" if incomplete else ""
+        counts = self.file_counts()
+        n_tw, n_eksi = counts.get("twitter", 0), counts.get("eksisozluk", 0)
+        if self.append_to:
+            m = _NAME_RE.match(self.append_to.name)
+            if not m:  # renamed by hand: keep the user's name
+                return self.append_to
+            return self.append_to.with_name(
+                f"{m['stamp']}{m['prefix'] or ''}_tw{n_tw}_eksi{n_eksi}_{m['slug']}{suffix}.csv"
+            )
+        return build_filename(self.output_dir, n_tw, n_eksi, *self.terms, prefix=self.prefix,
+                              stamp=self.stamp, suffix=suffix)
 
 
 def _row(p: Post, row: int, redactor: NameRedactor) -> dict:

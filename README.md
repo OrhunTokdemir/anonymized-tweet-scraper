@@ -70,6 +70,14 @@ This opens a full-screen terminal app (mouse and keyboard both work):
 
 Follower/following lists exist in twscrape too, but they return accounts, not posts, so they are left out on purpose.
 
+**Accounts during a run**
+
+- Each 40-tweet chunk goes to the least-recently-used account, so the accounts take turns. twscrape also moves off an account that hits a rate limit.
+- Every 10 chunks the log shows `Accounts: N active · requests a=… b=…`, so you can see the rotation working.
+- When all accounts are rate-limited, the log shows a yellow `X rate limit: all accounts are busy (next free at HH:MM UTC)` line. The run waits and then continues by itself; it hasn't frozen.
+- If X bans or logs out an account, the log says `Account @x was deactivated: <reason>` and the run continues with the remaining accounts. If **no** account is left, the run stops and saves what it collected as `_incomplete.csv`.
+- **Stop** (or ctrl+x) ends a run at any time and saves what was collected as `_incomplete.csv`. The app stays open. ctrl+q does the same but also quits.
+
 **Ekşi methods**: one topic (title, slug or URL), keyword search over titles, or gündem. Order: most-liked, oldest first, or today. Gündem continues into the "today" feed and keyword search pages through all results until the count is reached; `EKSI_MAX_PER_TOPIC` caps how many entries come from any one topic.
 
 ## Offensive-language batch (for ML)
@@ -95,7 +103,15 @@ This tab builds a Turkish dataset that mixes offensive-language **candidates** w
 - `N` and `M` are the actual row counts from each source.
 - The slug is an ASCII form of your search terms.
 
-Rows are written while the run is going, to `data/YYYYMMDD-HHMMSS_<slug>.partial.csv`, so a long run (tens of thousands of posts) doesn't sit in memory. When the run ends, that file is finished and renamed to the name above. If the run stops early (error, ban, network problem, or quitting with ctrl+q), whatever was collected is still saved, with `_incomplete` added to the name. A `.partial.csv` is only left behind if the process is killed hard. Its rows are anonymized, but a bare name that first appeared later in the run may not have been redacted yet, so delete it or rerun.
+Rows are written while the run is going, to `data/YYYYMMDD-HHMMSS_<slug>.partial.csv`, so a long run (tens of thousands of posts) doesn't sit in memory. When the run ends, that file is finished and renamed to the name above. If the run stops early (error, all accounts banned, network problem, Stop/ctrl+x, or quitting with ctrl+q), whatever was collected is still saved, with `_incomplete` added to the name. A `.partial.csv` is only left behind if the process is killed hard. Its rows are anonymized, but a bare name that first appeared later in the run may not have been redacted yet, so delete it or rerun.
+
+**Adding to an existing file.** Each tab has an **Output** choice: `New file` (default), or `Append to …` for one of the finished CSVs in `data/`. The Offensive tab lists only offensive batches and the Scrape tab lists only the others.
+
+- The counts you enter are what this run *adds*.
+- New rows stream to their own `.partial.csv`. The chosen file is only replaced when the run ends, so stopping or crashing mid-run leaves it unchanged.
+- At the end, old and new rows are merged (offensive batches are reshuffled), renumbered, and saved under the original timestamp with updated `tw<N>_eksi<M>` counts. The old copy is removed.
+- With "Exclude near-duplicate texts" on, posts whose text is already in the file are skipped.
+- Limitation: earlier runs' usernames are never stored, since that would defeat the anonymization. A new post that mentions an author from an *earlier* run by bare name, without `@`, can't be caught. @mentions, profile links, emails and phone numbers are always redacted.
 
 The file is UTF-8 with a BOM, so Turkish characters display correctly in Excel and LibreOffice.
 

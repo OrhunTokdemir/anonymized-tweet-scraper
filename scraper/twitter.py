@@ -42,6 +42,48 @@ class ScrapeError(Exception):
     """A user-facing error (bad input, no accounts, ...)."""
 
 
+class AccountsExhausted(ScrapeError):
+    """Every account in the pool is deactivated (banned, suspended, logged out)."""
+
+
+class AccountWatch:
+    """Keeps an eye on the account pool during a run.
+
+    twscrape marks banned/expired accounts inactive by itself and moves on to the
+    others. When *all* of them are gone, a search just returns nothing, which
+    would look like "no more results". This turns that into a clear stop.
+    Usernames here are the user's own scraping accounts and only go to the log.
+    """
+
+    SUMMARY_EVERY = 10  # chunks
+
+    def __init__(self, api: API, progress: Progress):
+        self.api = api
+        self.progress = progress
+        self._active: set[str] | None = None
+        self._checks = 0
+
+    async def check(self) -> None:
+        info = await self.api.pool.accounts_info()
+        active = {a["username"] for a in info if a["active"]}
+        if self._active is not None:
+            for a in info:
+                if a["username"] in self._active - active:
+                    reason = a["error_msg"] if a["error_msg"] not in ("", "None") else "no reason given"
+                    self.progress(f"[yellow]Account @{a['username']} was deactivated: {reason}. "
+                                  f"Continuing with {len(active)} active.[/yellow]")
+        self._active = active
+        self._checks += 1
+        if not active:
+            raise AccountsExhausted(
+                "All Twitter accounts are deactivated (banned or logged out). "
+                "Stopping; collected rows are saved."
+            )
+        if self._checks % self.SUMMARY_EVERY == 0:
+            reqs = " ".join(f"{a['username']}={a['total_req']}" for a in info if a["active"])
+            self.progress(f"[dim]Accounts: {len(active)} active · requests {reqs}[/dim]")
+
+
 async def build_api(settings: Settings, progress: Progress) -> API:
     """Mirror the accounts in .env into twscrape's pool and log them in."""
     api = API(settings.twscrape_db, raise_when_no_account=False)
@@ -178,7 +220,7 @@ def _numeric_id(text: str, pattern: str, what: str) -> int:
 
 async def fetch_search(
     api: API, query: str, limit: int, product: str, settings: Settings, progress: Progress,
-    emit: Emit, method: str | None = None,
+    emit: Emit, method: str | None = None, watch: AccountWatch | None = None,
 ) -> int:
     """Search in chunks of TW_ROTATE_EVERY; -> number of posts emitted.
 
@@ -188,6 +230,7 @@ async def fetch_search(
     `emit` as soon as it is complete.
     """
     method = method or f"search-{product.lower()}"
+    watch = watch or AccountWatch(api, progress)
     seen: set[int] = set()
     total = 0
     max_id: int | None = None
@@ -208,6 +251,7 @@ async def fetch_search(
             emit(batch)  # keep what this chunk got even if the search failed
             total += len(batch)
         progress(f"Twitter: {total}/{limit}")
+        await watch.check()  # raises if every account is gone, so empty != "no results"
         if not batch:
             break  # no more results
         max_id = min(seen) - 1
@@ -217,7 +261,8 @@ async def fetch_search(
 
 
 async def _collect(
-    gen: AsyncIterator, limit: int, query: str, method: str, progress: Progress, emit: Emit
+    gen: AsyncIterator, limit: int, query: str, method: str, progress: Progress, emit: Emit,
+    watch: AccountWatch,
 ) -> int:
     batch: list[Post] = []
     seen: set[int] = set()
@@ -233,11 +278,13 @@ async def _collect(
                 emit(batch)
                 batch = []
                 progress(f"Twitter: {total}/{limit}")
+                await watch.check()
             if total >= limit:
                 break
     finally:
         emit(batch)
     progress(f"Twitter: {total}/{limit}")
+    await watch.check()
     return total
 
 
@@ -247,13 +294,15 @@ async def fetch_tweets(
 ) -> int:
     """Dispatch on the method chosen in the UI (see TW_METHODS); -> posts emitted."""
     target = target.strip()
+    watch = AccountWatch(api, progress)
     if method in ("search_latest", "search_top"):
         product = "Latest" if method == "search_latest" else "Top"
-        return await fetch_search(api, target, limit, product, settings, progress, emit)
+        return await fetch_search(api, target, limit, product, settings, progress, emit, watch=watch)
 
     if method == "trend":
         # trend searches support the same chunked rotation
-        return await fetch_search(api, target, limit, "Top", settings, progress, emit, method="trend")
+        return await fetch_search(api, target, limit, "Top", settings, progress, emit, method="trend",
+                                  watch=watch)
 
     label = _QUERY_LABEL[method]
     if method in ("user", "user_replies"):
@@ -262,14 +311,14 @@ async def fetch_tweets(
         if user is None:
             raise ScrapeError("That account was not found (or is private/suspended).")
         fn = api.user_tweets if method == "user" else api.user_tweets_and_replies
-        return await _collect(fn(user.id, limit=limit), limit, label, method, progress, emit)
+        return await _collect(fn(user.id, limit=limit), limit, label, method, progress, emit, watch)
 
     if method == "replies":
         twid = _numeric_id(target, r"/status(?:es)?/(\d+)", "tweet")
-        return await _collect(api.tweet_replies(twid, limit=limit), limit, label, method, progress, emit)
+        return await _collect(api.tweet_replies(twid, limit=limit), limit, label, method, progress, emit, watch)
 
     if method == "list":
         list_id = _numeric_id(target, r"/lists/(\d+)", "list")
-        return await _collect(api.list_timeline(list_id, limit=limit), limit, label, method, progress, emit)
+        return await _collect(api.list_timeline(list_id, limit=limit), limit, label, method, progress, emit, watch)
 
     raise ScrapeError(f"Unknown Twitter method: {method}")
