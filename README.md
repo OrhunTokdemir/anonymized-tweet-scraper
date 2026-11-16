@@ -97,7 +97,7 @@ This tab builds a Turkish dataset that mixes offensive-language **candidates** w
 
 The file is UTF-8 with a BOM, so Turkish characters display correctly in Excel and LibreOffice.
 
-**Columns:** `row, source, method, query, topic, text, created_at, lang, like_count, repost_count, reply_count, quote_count, view_count, favorite_count, hashtags, post_type, sample_group, matched_terms, matched_categories, post_hash`
+**Columns:** `row, source, method, query, topic, text, created_at, lang, like_count, repost_count, reply_count, quote_count, view_count, favorite_count, hashtags, post_type, sample_group, matched_terms, matched_categories`
 
 The `query` column is anonymized too: `from:someone` becomes `from:username`. For user, replies and list methods the column only says `@username`, `tweet-replies` or `list`.
 
@@ -111,7 +111,7 @@ The `query` column is anonymized too: `from:someone` becomes `from:username`. Fo
 | `x.com/<user>/...`, `eksisozluk.com/biri/<nick>`       | generic link                   |
 | E-mail addresses, phone numbers                        | `[email]`, `[phone]`           |
 
-No user ids, usernames, or post ids/URLs are written. `post_hash` is a salted HMAC of the post id. With a fixed `ANON_SALT` you can de-duplicate across runs, but nobody can turn the hash back into the post.
+No user ids, usernames, post ids/URLs, or hashes of any of them are written.
 
 **Limits:** this is pseudonymization, not perfect anonymity. Exact tweet text plus a timestamp can often be found again with a web search. If you publish a dataset, consider rounding `created_at` or paraphrasing. Names shorter than 3 characters (display names shorter than 4) are not replaced as bare words, to avoid mangling ordinary text.
 

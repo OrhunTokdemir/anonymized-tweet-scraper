@@ -24,7 +24,6 @@ CSV_COLUMNS = [
     "sample_group",
     "matched_terms",
     "matched_categories",
-    "post_hash",
 ]
 
 
@@ -32,8 +31,8 @@ CSV_COLUMNS = [
 class Post:
     """One scraped post *before* anonymization.
 
-    `raw_id` and `names` exist only in memory: they are used for hashing and
-    redaction and are never written to the CSV.
+    `raw_id` and `names` exist only in memory: they are used for in-run
+    de-duplication and redaction and are never written to the CSV.
     """
 
     source: str  # "twitter" | "eksisozluk"

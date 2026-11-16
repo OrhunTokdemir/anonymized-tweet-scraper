@@ -8,14 +8,11 @@ Rules:
 - profile / status links on x.com, twitter.com,
   eksisozluk.com/biri/...                  -> generic link
 - e-mail addresses and phone numbers       -> [email] / [phone]
-- post ids are never written; a salted HMAC (`post_hash`) is written
-  instead so you can de-duplicate without being able to look the post up.
+- user ids and post ids are never written, not even as hashes
 """
 
 from __future__ import annotations
 
-import hashlib
-import hmac
 import html
 import re
 from collections.abc import Iterable
@@ -77,6 +74,3 @@ def anonymize_query(query: str, known_names: Iterable[str] = ()) -> str:
     query = _OPERATOR_RE.sub(lambda m: f"{m.group(1).lower()}:username", query)
     return anonymize_text(query, known_names)
 
-
-def post_hash(source: str, raw_id: str, salt: bytes) -> str:
-    return hmac.new(salt, f"{source}:{raw_id}".encode(), hashlib.sha256).hexdigest()[:16]

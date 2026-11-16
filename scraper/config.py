@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import os
-import secrets
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -37,8 +36,6 @@ class Settings:
     delay_max: float
     eksi_max_per_topic: int
     output_dir: str
-    salt: bytes
-    salt_is_persistent: bool
 
 
 def _env(name: str, default: str = "") -> str:
@@ -83,7 +80,6 @@ def load_settings() -> Settings:
             )
         i += 1
 
-    salt_env = _env("ANON_SALT")
     delay_min = float(_env("TW_DELAY_MIN", "3"))
     return Settings(
         accounts=accounts,
@@ -93,6 +89,4 @@ def load_settings() -> Settings:
         delay_max=max(delay_min, float(_env("TW_DELAY_MAX", "8"))),
         eksi_max_per_topic=max(1, int(_env("EKSI_MAX_PER_TOPIC", "10"))),
         output_dir=str(project_path(_env("OUTPUT_DIR", "data"))),
-        salt=salt_env.encode() if salt_env else secrets.token_bytes(32),
-        salt_is_persistent=bool(salt_env),
     )

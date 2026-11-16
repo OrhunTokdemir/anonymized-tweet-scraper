@@ -4,7 +4,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from scraper.anonymize import anonymize_query, anonymize_text, post_hash  # noqa: E402
+from scraper.anonymize import anonymize_query, anonymize_text  # noqa: E402
 from scraper.output import slugify  # noqa: E402
 
 
@@ -50,10 +50,6 @@ class AnonymizeTests(unittest.TestCase):
 
     def test_html_stripped(self):
         self.assertEqual(anonymize_text("a <b>kalın</b> &amp; b"), "a kalın & b")
-
-    def test_post_hash_stable_and_salted(self):
-        self.assertEqual(post_hash("twitter", "1", b"s"), post_hash("twitter", "1", b"s"))
-        self.assertNotEqual(post_hash("twitter", "1", b"s"), post_hash("twitter", "1", b"t"))
 
     def test_query_operators(self):
         self.assertEqual(anonymize_query("from:someone to:other kedi"), "from:username to:username kedi")

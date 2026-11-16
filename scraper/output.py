@@ -16,7 +16,7 @@ import re
 from datetime import datetime
 from pathlib import Path
 
-from .anonymize import anonymize_query, anonymize_text, post_hash
+from .anonymize import anonymize_query, anonymize_text
 from .models import CSV_COLUMNS, Post
 
 _TR = str.maketrans("çğıöşüÇĞİÖŞÜâîû", "cgiosuCGIOSUaiu")
@@ -38,7 +38,7 @@ def build_filename(
     return Path(output_dir) / f"{stamp}{prefix}_tw{n_tw}_eksi{n_eksi}_{slug}.csv"
 
 
-def write_csv(posts: list[Post], path: Path, salt: bytes) -> None:
+def write_csv(posts: list[Post], path: Path) -> None:
     # Redact every username/display name seen anywhere in this run, so
     # cross-references between posts are caught too.
     known_names: set[str] = set()
@@ -72,6 +72,5 @@ def write_csv(posts: list[Post], path: Path, salt: bytes) -> None:
                     "sample_group": p.sample_group,
                     "matched_terms": p.matched_terms,
                     "matched_categories": p.matched_categories,
-                    "post_hash": post_hash(p.source, p.raw_id, salt),
                 }
             )

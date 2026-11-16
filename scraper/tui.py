@@ -194,11 +194,9 @@ class ScraperApp(App):
             self.say("[yellow]No posts fetched; no file written.[/yellow]")
             return
         path = build_filename(self.settings.output_dir, n_tw, n_eksi, *terms, prefix=prefix)
-        write_csv(posts, path, self.settings.salt)
+        write_csv(posts, path)
         self.say(f"[green b]Wrote {len(posts)} anonymized posts[/green b] "
                  f"({n_tw} tweets, {n_eksi} entries) to [u]{path}[/u]")
-        if not self.settings.salt_is_persistent:
-            self.say("[dim]Tip: set ANON_SALT in .env so post_hash stays stable across runs.[/dim]")
 
     # ------------------------------------------------------------ form events
     @on(Select.Changed, "#tw-method")
