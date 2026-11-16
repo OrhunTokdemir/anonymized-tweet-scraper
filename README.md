@@ -70,7 +70,7 @@ This opens a full-screen terminal app (mouse and keyboard both work):
 
 Follower/following lists exist in twscrape too, but they return accounts, not posts, so they are left out on purpose.
 
-**Ekşi methods**: one topic (title, slug or URL), keyword search over titles, or gündem. Order: most-liked, oldest first, or today.
+**Ekşi methods**: one topic (title, slug or URL), keyword search over titles, or gündem. Order: most-liked, oldest first, or today. Gündem continues into the "today" feed and keyword search pages through all results until the count is reached; `EKSI_MAX_PER_TOPIC` caps how many entries come from any one topic.
 
 ## Offensive-language batch (for ML)
 
@@ -79,7 +79,7 @@ This tab builds a Turkish dataset that mixes offensive-language **candidates** w
 - **Lexicon**: `lexicons/tr_offensive.txt` is a seed list of ~150 terms in five categories (profanity, insult, identity-based, curse, threat), including common spellings typed without Turkish letters. Words with a harmless everyday meaning appear only as phrases (a fixed two-word phrase is listed instead of the ambiguous single word). Extend it. The format is explained at the top of the file. A trailing `$` makes a term whole-word only (`top$` won't match `toplantı`). Without `$`, a term also matches with suffixes (`kelime` matches `kelimeler`).
 - **Matching** ignores case (Turkish I/ı, İ/i), leetspeak (`k3l1me`), letters split by dots or spaces (`k.e.l.i.m.e`) and stretched letters (`kelimeeee`). Matching runs on the anonymized text, so a username that contains a listed word never counts as a hit.
 - **Twitter**: lexicon terms are combined into `(t1 OR t2 ...) lang:tr -filter:retweets` queries under X's length limit. The program fetches from every query so one word doesn't dominate. Control tweets come from a generic Turkish query that excludes lexicon words. A control tweet that still contains one moves to the offensive group.
-- **Ekşi**: there is no site-wide full-text search, so the program scans gündem entries and sorts them by lexicon hits.
+- **Ekşi**: there is no site-wide full-text search, so the program pulls topics from (1) a title search for each lexicon term, which only adds offensive candidates, and (2) gündem and then the "today" feed, which add both groups. It checks every entry against the lexicon locally and keeps going until both counts are reached. That is roughly 1 s per page of 10 entries. Truly offensive entries are rare outside insult-titled topics, so large Ekşi counts can take hours. A safety cap stops after `max(5000, 40 × requested)` scanned entries.
 - **Offensive %** sets the mix (e.g. 50 means half offensive candidates, half control). Rows are shuffled. Near-duplicate texts are removed by default (important for ML: copies leak between train and test).
 - **Extra CSV columns**: `sample_group` (`offensive_candidate` / `control`), `matched_terms`, `matched_categories`. In this mode the `query` column holds only a short label (`lexicon:tr_offensive` or `control`), not the long `OR` search string.
 - **File name**: `data/YYYYMMDD-HHMMSS_offensive_tw<N>_eksi<M>_<lexicon>.csv`
@@ -94,6 +94,8 @@ This tab builds a Turkish dataset that mixes offensive-language **candidates** w
 - The timestamp comes first, so files sort chronologically.
 - `N` and `M` are the actual row counts from each source.
 - The slug is an ASCII form of your search terms.
+
+Rows are written while the run is going, to `data/YYYYMMDD-HHMMSS_<slug>.partial.csv`, so a long run (tens of thousands of posts) doesn't sit in memory. When the run ends, that file is finished and renamed to the name above. If the run stops early (error, ban, network problem, or quitting with ctrl+q), whatever was collected is still saved, with `_incomplete` added to the name. A `.partial.csv` is only left behind if the process is killed hard. Its rows are anonymized, but a bare name that first appeared later in the run may not have been redacted yet, so delete it or rerun.
 
 The file is UTF-8 with a BOM, so Turkish characters display correctly in Excel and LibreOffice.
 

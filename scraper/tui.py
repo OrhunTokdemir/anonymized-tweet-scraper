@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import asyncio
 import os
-import random
 import threading
 from collections.abc import Callable
 
@@ -33,8 +32,7 @@ from textual.widgets import (
 from . import envfile
 from .config import Settings, env_example_path, env_path, load_settings
 from .eksi import EKSI_METHODS, EKSI_ORDERS
-from .models import Post
-from .output import build_filename, write_csv
+from .output import CsvStream
 from .twitter import TW_METHODS, ScrapeError
 
 ACCOUNTS_HELP = (
@@ -189,14 +187,31 @@ class ScraperApp(App):
                 self._api = await build_api(self.settings, self.say)
             return self._api
 
-    def save(self, posts: list[Post], n_tw: int, n_eksi: int, *terms: str, prefix: str = "") -> None:
-        if not posts:
-            self.say("[yellow]No posts fetched; no file written.[/yellow]")
-            return
-        path = build_filename(self.settings.output_dir, n_tw, n_eksi, *terms, prefix=prefix)
-        write_csv(posts, path)
-        self.say(f"[green b]Wrote {len(posts)} anonymized posts[/green b] "
-                 f"({n_tw} tweets, {n_eksi} entries) to [u]{path}[/u]")
+    def open_stream(self, *terms: str, prefix: str = "", shuffle: bool = False) -> CsvStream | None:
+        try:
+            stream = CsvStream(self.settings.output_dir, *terms, prefix=prefix, shuffle=shuffle)
+        except OSError as exc:
+            self.say(f"[red]Cannot write to {escape(str(self.settings.output_dir))}: {exc}[/red]")
+            return None
+        self.say(f"[dim]Writing rows as they arrive to {escape(str(stream.partial_path))}[/dim]")
+        return stream
+
+    def report(self, stream: CsvStream, incomplete: bool) -> None:
+        """Finalize the CSV (sync) and log where it went."""
+        path = stream.finish(incomplete=incomplete)
+        try:
+            if path is None:
+                self.say("[yellow]No posts fetched; no file written.[/yellow]")
+                return
+            if stream.groups:
+                n_off = stream.groups.get("offensive_candidate", 0)
+                self.say(f"Offensive candidates: {n_off}, control: {stream.total - n_off}")
+            n_tw, n_eksi = stream.counts.get("twitter", 0), stream.counts.get("eksisozluk", 0)
+            what = "[yellow b]Run stopped early; saved[/yellow b]" if incomplete else "[green b]Wrote[/green b]"
+            self.say(f"{what} {stream.total} anonymized posts ({n_tw} tweets, {n_eksi} entries) "
+                     f"to [u]{escape(str(path))}[/u]")
+        except Exception:  # app may be shutting down (ctrl+q during a run)
+            pass
 
     # ------------------------------------------------------------ form events
     @on(Select.Changed, "#tw-method")
@@ -307,34 +322,40 @@ class ScraperApp(App):
             self.say("[red]Ekşi needs a topic or keyword.[/red]")
             return
 
+        tw_term = tw_target if tw_method.startswith("search") or tw_method == "trend" else tw_method
+        stream = self.open_stream(
+            tw_term if tw_count > 0 else "", (eksi_query or eksi_method) if eksi_count > 0 else "",
+            shuffle=self.query_one("#shuffle", Checkbox).value,
+        )
+        if stream is None:
+            return
+
         self.set_busy(True)
-        tweets: list[Post] = []
-        entries: list[Post] = []
+        incomplete = True
         try:
             if tw_count > 0:
                 from .twitter import fetch_tweets
                 self.say(f"[b]Twitter[/b]: {TW_METHODS[tw_method][0]}, {tw_count} posts")
                 api = await self.get_api()
-                tweets = await fetch_tweets(api, tw_method, tw_target, tw_count, self.settings, self.say)
+                await fetch_tweets(api, tw_method, tw_target, tw_count, self.settings, self.say, stream.add)
             if eksi_count > 0:
                 from .eksi import fetch_eksi
                 self.say(f"[b]Ekşi[/b]: {EKSI_METHODS[eksi_method]}, {eksi_count} entries")
-                entries = await asyncio.to_thread(
+                await asyncio.to_thread(
                     fetch_eksi, eksi_method, eksi_query, eksi_count, eksi_order,
-                    self.settings, self.thread_progress(),
+                    self.settings, self.thread_progress(), stream.add,
                 )
-            posts = tweets + entries
-            if self.query_one("#shuffle", Checkbox).value:
-                random.shuffle(posts)
-            tw_term = tw_target if tw_method.startswith("search") or tw_method == "trend" else tw_method
-            self.save(posts, len(tweets), len(entries),
-                      tw_term if tweets else "", (eksi_query or eksi_method) if entries else "")
+            incomplete = False
         except ScrapeError as exc:
             self.say(f"[red]{exc}[/red]")
         except Exception as exc:  # keep the app alive, show what happened
             self.say(f"[red]Error: {exc.__class__.__name__}: {exc}[/red]")
         finally:
-            self.set_busy(False)
+            # also runs on cancel (ctrl+q): whatever was collected is kept
+            try:
+                self.report(stream, incomplete)
+            finally:
+                self.set_busy(False)
 
     @work(group="job")
     async def run_offensive(self) -> None:
@@ -357,31 +378,33 @@ class ScraperApp(App):
             self.say(f"[red]{exc}[/red]")
             return
 
+        stream = self.open_stream(lexicon.name, prefix="offensive", shuffle=True)  # shuffle: avoid ordering bias when annotating
+        if stream is None:
+            return
+
         self.set_busy(True)
-        tweets: list[Post] = []
-        entries: list[Post] = []
+        incomplete = True
         try:
             self.say(f"[b]Offensive batch[/b]: lexicon '{lexicon.name}' ({len(lexicon.terms)} terms), {ratio}% offensive")
             if n_tw > 0:
                 off, ctrl = split_counts(n_tw, ratio)
                 api = await self.get_api()
-                tweets = await collect_twitter(api, lexicon, off, ctrl, extra, self.settings, self.say, dedupe_on)
+                await collect_twitter(api, lexicon, off, ctrl, extra, self.settings, self.say, stream.add, dedupe_on)
             if n_eksi > 0:
                 off, ctrl = split_counts(n_eksi, ratio)
-                entries = await asyncio.to_thread(
-                    collect_eksi, lexicon, off, ctrl, self.settings, self.thread_progress(), dedupe_on
+                await asyncio.to_thread(
+                    collect_eksi, lexicon, off, ctrl, self.settings, self.thread_progress(), stream.add, dedupe_on
                 )
-            posts = tweets + entries
-            random.shuffle(posts)  # avoid ordering bias when annotating
-            n_off = sum(p.sample_group == "offensive_candidate" for p in posts)
-            self.say(f"Offensive candidates: {n_off}, control: {len(posts) - n_off}")
-            self.save(posts, len(tweets), len(entries), lexicon.name, prefix="offensive")
+            incomplete = False
         except ScrapeError as exc:
             self.say(f"[red]{exc}[/red]")
         except Exception as exc:
             self.say(f"[red]Error: {exc.__class__.__name__}: {exc}[/red]")
         finally:
-            self.set_busy(False)
+            try:
+                self.report(stream, incomplete)
+            finally:
+                self.set_busy(False)
 
     @work(exclusive=True, group="trends")
     async def run_load_trends(self) -> None:

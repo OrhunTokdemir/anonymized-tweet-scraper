@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass, field
 
 CSV_COLUMNS = [
@@ -55,3 +56,8 @@ class Post:
     matched_terms: str = ""
     matched_categories: str = ""
     names: set[str] = field(default_factory=set)  # usernames / display names to redact
+
+
+# Fetchers hand over posts in chunks through this callback (usually
+# output.CsvStream.add) so long runs are written to disk as they go.
+Emit = Callable[[list[Post]], None]

@@ -10,14 +10,14 @@ from __future__ import annotations
 import random
 import re
 import time
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Iterable, Iterator, Mapping
 from typing import Any, Literal
 
 from eksiapi import EksiClient
 from eksiapi.errors import EksiApiError
 
 from .config import Settings
-from .models import Post
+from .models import Emit, Post
 
 Order = Literal["chronological", "popular", "today"]
 Progress = Callable[[str], None]
@@ -60,18 +60,21 @@ def _resolve_topic(client: EksiClient, term: str) -> int:
 
 
 def _entries_from_topic(
-    client: EksiClient, topic_id: int, limit: int, order: Order, method: str, query: str
-) -> list[Post]:
-    posts: list[Post] = []
+    client: EksiClient, topic_id: int, limit: int, order: Order, method: str, query: str,
+    emit: Emit,
+) -> int:
+    """Emit one batch per page; -> number of entries emitted."""
+    total = 0
     page = 1
-    while len(posts) < limit:
+    while total < limit:
         topic = client.topic_typed(topic_id, page, action=_ACTION[order])
         if not topic.entries:
             break
+        batch: list[Post] = []
         for entry in topic.entries:
             if not entry.content:
                 continue
-            posts.append(
+            batch.append(
                 Post(
                     source="eksisozluk",
                     method=f"{method}-{order}",
@@ -84,13 +87,15 @@ def _entries_from_topic(
                     names={entry.author} if entry.author else set(),
                 )
             )
-            if len(posts) >= limit:
+            if total + len(batch) >= limit:
                 break
+        emit(batch)
+        total += len(batch)
         if topic.page_count is None or page >= topic.page_count:
             break
         page += 1
         _pause()
-    return posts
+    return total
 
 
 def _topic_ids(items: Any) -> list[int]:
@@ -103,52 +108,117 @@ def _topic_ids(items: Any) -> list[int]:
     return ids
 
 
+# A topic-list source for topic_pool: ("search", keyword), ("popular",) or ("today",)
+Source = tuple[str, ...]
+
+
+def open_client() -> EksiClient:
+    return EksiClient.anonymous(raw_response=False)
+
+
+def topic_pool(
+    client: EksiClient, sources: Iterable[Source], progress: Progress, max_pages: int = 50,
+) -> Iterator[tuple[int, Source]]:
+    """Yield (topic_id, source) lazily, page by page, without repeats.
+
+    Lets callers keep pulling topics until they have enough entries instead of
+    stopping at a fixed number of topics. A source that errors is skipped.
+    """
+    seen: set[int] = set()
+    for source in sources:
+        kind = source[0]
+        for page_no in range(1, max_pages + 1):
+            try:
+                if kind == "search":
+                    payload = client.search_topics(source[1], page=page_no)
+                elif kind == "popular":
+                    payload = client.popular(page=page_no)
+                elif kind == "today":
+                    payload = client.today(page=page_no)
+                else:
+                    raise ValueError(f"Unknown topic source: {kind}")
+                page = client.page(payload, page=page_no)
+            except EksiApiError as exc:
+                progress(f"Ekşi: {kind} list stopped at page {page_no} ({exc.__class__.__name__})")
+                break
+            ids = _topic_ids(page.items)
+            for topic_id in ids:
+                if topic_id not in seen:
+                    seen.add(topic_id)
+                    yield topic_id, source
+            if not ids or not page.has_more:
+                break
+            _pause()
+
+
+def read_topic(
+    client: EksiClient, topic_id: int, take: int, order: Order, method: str, query: str,
+    emit: Emit, progress: Progress,
+) -> None:
+    """Read up to `take` entries of one topic into `emit`; falls back to
+    chronological when `today` has nothing. API errors skip the topic's rest."""
+    got = 0
+
+    def counted(batch: list[Post]) -> None:
+        nonlocal got
+        got += len(batch)
+        emit(batch)
+
+    try:
+        _entries_from_topic(client, topic_id, take, order, method, query, counted)
+        if got == 0 and order == "today":  # topic may have no entries today
+            _entries_from_topic(client, topic_id, take, "chronological", method, query, counted)
+    except EksiApiError as exc:
+        # pages emitted before the error are already saved
+        progress(f"Ekşi: skipping rest of topic {topic_id} ({exc.__class__.__name__})")
+
+
 def _spread(
-    client: EksiClient, topic_ids: list[int], limit: int, order: Order, method: str,
-    query: str, per_topic: int, progress: Progress,
-) -> list[Post]:
-    posts: list[Post] = []
-    for topic_id in topic_ids:
-        if len(posts) >= limit:
+    client: EksiClient, topics: Iterable[tuple[int, Source]], limit: int, order: Order,
+    method: str, query: str, per_topic: int, progress: Progress, emit: Emit,
+) -> int:
+    total = 0
+
+    def counted(batch: list[Post]) -> None:
+        nonlocal total
+        total += len(batch)
+        emit(batch)
+
+    n_topics = 0
+    for topic_id, _ in topics:
+        if total >= limit:
             break
-        take = min(per_topic, limit - len(posts))
-        try:
-            got = _entries_from_topic(client, topic_id, take, order, method, query)
-            if not got and order == "today":  # topic may have no entries today
-                got = _entries_from_topic(client, topic_id, take, "chronological", method, query)
-        except EksiApiError as exc:
-            progress(f"Ekşi: skipping topic {topic_id} ({exc.__class__.__name__})")
-            continue
-        posts.extend(got)
-        progress(f"Ekşi: {len(posts)}/{limit}")
+        n_topics += 1
+        read_topic(client, topic_id, min(per_topic, limit - total), order, method, query,
+                   counted, progress)
+        progress(f"Ekşi: {total}/{limit} ({n_topics} topics)")
         _pause()
-    return posts
+    if total < limit:
+        progress(f"Ekşi: ran out of topics at {total}/{limit}.")
+    return total
 
 
 def fetch_eksi(
     method: str, query: str, limit: int, order: Order, settings: Settings, progress: Progress,
-    per_topic: int | None = None,
-) -> list[Post]:
-    """method: 'topic' (one başlık), 'search' (keyword over titles), 'gundem' (popular now)."""
+    emit: Emit, per_topic: int | None = None,
+) -> int:
+    """method: 'topic' (one başlık), 'search' (keyword over titles), 'gundem' (popular now).
+    Entries are passed to `emit` page by page; -> number emitted."""
     per_topic = per_topic or settings.eksi_max_per_topic
-    with EksiClient.anonymous(raw_response=False) as client:
+    with open_client() as client:
         if method == "topic":
             topic_id = _resolve_topic(client, query)
-            posts = _entries_from_topic(client, topic_id, limit, order, method, query)
-            progress(f"Ekşi: {len(posts)}/{limit}")
-            return posts
+            total = _entries_from_topic(client, topic_id, limit, order, method, query, emit)
+            progress(f"Ekşi: {total}/{limit}")
+            return total
 
         if method == "search":
-            page = client.page(client.search_topics(query))
-            ids = _topic_ids(page.items)
-            if not ids:
-                progress("Ekşi: no topics matched that keyword.")
-            return _spread(client, ids, limit, order, method, query, per_topic, progress)
+            topics = topic_pool(client, [("search", query)], progress)
+            return _spread(client, topics, limit, order, method, query, per_topic, progress, emit)
 
         if method == "gundem":
-            ids: list[int] = []
-            for p in (1, 2):
-                ids += _topic_ids(client.page(client.popular(page=p)).items)
-            return _spread(client, ids, limit, order, method, "gündem", per_topic, progress)
+            # gündem first, then the much longer "today" feed for big requests
+            topics = topic_pool(client, [("popular",), ("today",)], progress)
+            return _spread(client, topics, limit, order, method, "gündem", per_topic, progress, emit)
 
     raise ValueError(f"Unknown Ekşi method: {method}")

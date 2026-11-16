@@ -12,7 +12,7 @@ from collections.abc import AsyncIterator, Callable
 from twscrape import API, NoAccountError, set_log_level
 
 from .config import Settings
-from .models import Post
+from .models import Emit, Post
 
 set_log_level("WARNING")
 
@@ -178,68 +178,82 @@ def _numeric_id(text: str, pattern: str, what: str) -> int:
 
 async def fetch_search(
     api: API, query: str, limit: int, product: str, settings: Settings, progress: Progress,
-    method: str | None = None,
-) -> list[Post]:
-    """Search in chunks of TW_ROTATE_EVERY.
+    emit: Emit, method: str | None = None,
+) -> int:
+    """Search in chunks of TW_ROTATE_EVERY; -> number of posts emitted.
 
     Each chunk opens a fresh search, so twscrape picks the least-recently-used
     account for it, with a random pause between chunks. twscrape also switches
-    accounts by itself whenever one gets rate-limited.
+    accounts by itself whenever one gets rate-limited. Every chunk is passed to
+    `emit` as soon as it is complete.
     """
     method = method or f"search-{product.lower()}"
     seen: set[int] = set()
-    posts: list[Post] = []
+    total = 0
     max_id: int | None = None
 
-    while len(posts) < limit:
-        chunk = min(settings.rotate_every, limit - len(posts))
+    while total < limit:
+        chunk = min(settings.rotate_every, limit - total)
         q = query if max_id is None else f"{query} max_id:{max_id}"
-        new = 0
-        async for tw in api.search(q, limit=chunk, kv={"product": product}):
+        batch: list[Post] = []
+        try:
+            async for tw in api.search(q, limit=chunk, kv={"product": product}):
+                if tw.id in seen:
+                    continue
+                seen.add(tw.id)
+                batch.append(_to_post(tw, query, method))
+                if len(batch) >= chunk:
+                    break
+        finally:
+            emit(batch)  # keep what this chunk got even if the search failed
+            total += len(batch)
+        progress(f"Twitter: {total}/{limit}")
+        if not batch:
+            break  # no more results
+        max_id = min(seen) - 1
+        if total < limit:
+            await asyncio.sleep(random.uniform(settings.delay_min, settings.delay_max))
+    return total
+
+
+async def _collect(
+    gen: AsyncIterator, limit: int, query: str, method: str, progress: Progress, emit: Emit
+) -> int:
+    batch: list[Post] = []
+    seen: set[int] = set()
+    total = 0
+    try:
+        async for tw in gen:
             if tw.id in seen:
                 continue
             seen.add(tw.id)
-            posts.append(_to_post(tw, query, method))
-            new += 1
-            if new >= chunk or len(posts) >= limit:
+            batch.append(_to_post(tw, query, method))
+            total += 1
+            if len(batch) >= 20:
+                emit(batch)
+                batch = []
+                progress(f"Twitter: {total}/{limit}")
+            if total >= limit:
                 break
-        progress(f"Twitter: {len(posts)}/{limit}")
-        if new == 0:
-            break  # no more results
-        max_id = min(seen) - 1
-        if len(posts) < limit:
-            await asyncio.sleep(random.uniform(settings.delay_min, settings.delay_max))
-    return posts
-
-
-async def _collect(gen: AsyncIterator, limit: int, query: str, method: str, progress: Progress) -> list[Post]:
-    posts: list[Post] = []
-    seen: set[int] = set()
-    async for tw in gen:
-        if tw.id in seen:
-            continue
-        seen.add(tw.id)
-        posts.append(_to_post(tw, query, method))
-        if len(posts) % 20 == 0:
-            progress(f"Twitter: {len(posts)}/{limit}")
-        if len(posts) >= limit:
-            break
-    progress(f"Twitter: {len(posts)}/{limit}")
-    return posts
+    finally:
+        emit(batch)
+    progress(f"Twitter: {total}/{limit}")
+    return total
 
 
 async def fetch_tweets(
-    api: API, method: str, target: str, limit: int, settings: Settings, progress: Progress
-) -> list[Post]:
-    """Dispatch on the method chosen in the UI (see TW_METHODS)."""
+    api: API, method: str, target: str, limit: int, settings: Settings, progress: Progress,
+    emit: Emit,
+) -> int:
+    """Dispatch on the method chosen in the UI (see TW_METHODS); -> posts emitted."""
     target = target.strip()
     if method in ("search_latest", "search_top"):
         product = "Latest" if method == "search_latest" else "Top"
-        return await fetch_search(api, target, limit, product, settings, progress)
+        return await fetch_search(api, target, limit, product, settings, progress, emit)
 
     if method == "trend":
         # trend searches support the same chunked rotation
-        return await fetch_search(api, target, limit, "Top", settings, progress, method="trend")
+        return await fetch_search(api, target, limit, "Top", settings, progress, emit, method="trend")
 
     label = _QUERY_LABEL[method]
     if method in ("user", "user_replies"):
@@ -248,14 +262,14 @@ async def fetch_tweets(
         if user is None:
             raise ScrapeError("That account was not found (or is private/suspended).")
         fn = api.user_tweets if method == "user" else api.user_tweets_and_replies
-        return await _collect(fn(user.id, limit=limit), limit, label, method, progress)
+        return await _collect(fn(user.id, limit=limit), limit, label, method, progress, emit)
 
     if method == "replies":
         twid = _numeric_id(target, r"/status(?:es)?/(\d+)", "tweet")
-        return await _collect(api.tweet_replies(twid, limit=limit), limit, label, method, progress)
+        return await _collect(api.tweet_replies(twid, limit=limit), limit, label, method, progress, emit)
 
     if method == "list":
         list_id = _numeric_id(target, r"/lists/(\d+)", "list")
-        return await _collect(api.list_timeline(list_id, limit=limit), limit, label, method, progress)
+        return await _collect(api.list_timeline(list_id, limit=limit), limit, label, method, progress, emit)
 
     raise ScrapeError(f"Unknown Twitter method: {method}")

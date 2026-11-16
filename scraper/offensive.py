@@ -14,7 +14,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from .anonymize import anonymize_text
-from .models import Post
+from .models import Emit, Post
 from .paths import resource_path
 
 Progress = Callable[[str], None]
@@ -173,27 +173,75 @@ def dedupe(posts: list[Post], seen: set[str]) -> list[Post]:
     return out
 
 
+class _Quota:
+    """Passes classified posts on to `emit` until each group is full."""
+
+    def __init__(self, n_off: int, n_ctrl: int, emit: Emit):
+        self.want = {OFFENSIVE: n_off, CONTROL: n_ctrl}
+        self.have = {OFFENSIVE: 0, CONTROL: 0}
+        self.emit = emit
+
+    def full(self, group: str) -> bool:
+        return self.have[group] >= self.want[group]
+
+    def take(self, posts: list[Post]) -> None:
+        keep = []
+        for post in posts:
+            if not self.full(post.sample_group):
+                self.have[post.sample_group] += 1
+                keep.append(post)
+        self.emit(keep)
+
+    @property
+    def total(self) -> int:
+        return sum(self.have.values())
+
+    def done(self) -> bool:
+        return self.full(OFFENSIVE) and self.full(CONTROL)
+
+
+class _Absorber:
+    """Turns raw fetched batches into accepted rows: drops repeated posts
+    (same id, and optionally same anonymized text), tags them with lexicon
+    hits, and hands them to the quota."""
+
+    def __init__(self, lexicon: Lexicon, quota: _Quota, exclude_duplicates: bool):
+        self.lexicon = lexicon
+        self.quota = quota
+        self.exclude_duplicates = exclude_duplicates
+        self.seen_ids: set[str] = set()
+        self.seen_text: set[str] = set()
+        self.scanned = 0
+
+    def __call__(self, label: str, controls_wanted: bool, method: str | None = None) -> Emit:
+        def absorb(batch: list[Post]) -> None:
+            self.scanned += len(batch)
+            for p in batch:
+                # short label instead of the long search string; hits are in matched_terms
+                p.query = label
+                if method:
+                    p.method = method
+            batch = [p for p in batch if not p.raw_id or p.raw_id not in self.seen_ids]
+            self.seen_ids.update(p.raw_id for p in batch if p.raw_id)
+            if self.exclude_duplicates:
+                batch = dedupe(batch, self.seen_text)
+            off, ctrl = classify(batch, self.lexicon)
+            # Offensive-only sources drop posts the local matcher didn't confirm;
+            # mixed sources keep both (a "control" that still contains lexicon
+            # words counts as an offensive candidate).
+            self.quota.take(off + (ctrl if controls_wanted else []))
+        return absorb
+
+
 async def collect_twitter(
     api, lexicon: Lexicon, n_off: int, n_ctrl: int, extra: str, settings, progress: Progress,
-    exclude_duplicates: bool = True,
-) -> list[Post]:
+    emit: Emit, exclude_duplicates: bool = True,
+) -> int:
+    """Accepted posts go to `emit` chunk by chunk; -> number emitted."""
     from .twitter import fetch_search
 
-    seen_text: set[str] = set()
-    seen_ids: set[str] = set()
-    offensive: list[Post] = []
-    control: list[Post] = []
-
-    def absorb(batch: list[Post], label: str) -> tuple[list[Post], list[Post]]:
-        # Short label instead of the long "(a OR b OR ...) lang:tr" search string;
-        # the actual hits are in matched_terms.
-        for p in batch:
-            p.query = label
-        batch = [p for p in batch if p.raw_id not in seen_ids]
-        seen_ids.update(p.raw_id for p in batch)
-        if exclude_duplicates:
-            batch = dedupe(batch, seen_text)
-        return classify(batch, lexicon)
+    quota = _Quota(n_off, n_ctrl, emit)
+    absorber = _Absorber(lexicon, quota, exclude_duplicates)
 
     search_terms = [t.raw for t in lexicon.terms]
     if n_off > 0:
@@ -202,44 +250,89 @@ async def collect_twitter(
         # a bit to make up for duplicates and posts the local matcher rejects.
         per_query = max(5, math.ceil(n_off * 1.3 / len(queries)))
         for i, q in enumerate(queries, 1):
-            if len(offensive) >= n_off:
+            if quota.full(OFFENSIVE):
                 break
             progress(f"Offensive query {i}/{len(queries)}")
-            off, _ = absorb(await fetch_search(api, q, per_query, "Latest", settings, progress,
-                                               method="offensive-search"), f"lexicon:{lexicon.name}")
-            offensive.extend(off)  # posts the local matcher didn't confirm are dropped
+            await fetch_search(api, q, per_query, "Latest", settings, progress,
+                               absorber(f"lexicon:{lexicon.name}", False), method="offensive-search")
 
     if n_ctrl > 0:
         progress("Control query")
         q = build_control_query(search_terms, extra)
-        off, ctrl = absorb(await fetch_search(api, q, math.ceil(n_ctrl * 1.2) + 5, "Latest",
-                                              settings, progress, method="control-search"), "control")
-        offensive.extend(off)  # control posts that still contain lexicon words
-        control.extend(ctrl)
+        await fetch_search(api, q, math.ceil(n_ctrl * 1.2) + 5, "Latest", settings, progress,
+                           absorber("control", True), method="control-search")
 
-    if len(offensive) < n_off:
-        progress(f"Only {len(offensive)}/{n_off} offensive candidates found on Twitter.")
-    if len(control) < n_ctrl:
-        progress(f"Only {len(control)}/{n_ctrl} control tweets found.")
-    return offensive[:n_off] + control[:n_ctrl]
+    if quota.have[OFFENSIVE] < n_off:
+        progress(f"Only {quota.have[OFFENSIVE]}/{n_off} offensive candidates found on Twitter.")
+    if quota.have[CONTROL] < n_ctrl:
+        progress(f"Only {quota.have[CONTROL]}/{n_ctrl} control tweets found.")
+    return quota.total
+
+
+EKSI_PER_TOPIC = 50  # entries read per topic in the offensive batch
+EKSI_TITLE_PAGES = 3  # title-search result pages per lexicon term
 
 
 def collect_eksi(
     lexicon: Lexicon, n_off: int, n_ctrl: int, settings, progress: Progress,
-    exclude_duplicates: bool = True,
-) -> list[Post]:
-    """Scan gündem entries and split them by lexicon hits. Ekşi has no
-    cross-site full-text search, so this samples what is being discussed now."""
-    from .eksi import fetch_eksi
+    emit: Emit, exclude_duplicates: bool = True,
+) -> int:
+    """Ekşi has no full-text search across the site, so topics are pulled from:
 
-    scan = min(800, max(100, (n_off + n_ctrl) * 10))
-    progress(f"Ekşi: scanning up to {scan} gündem entries...")
-    entries = fetch_eksi("gundem", "", scan, "today", settings, progress, per_topic=15)
-    if exclude_duplicates:
-        entries = dedupe(entries, set())
-    offensive, control = classify(entries, lexicon)
-    for p in offensive + control:
-        p.method = "offensive-gundem"
-    if len(offensive) < n_off:
-        progress(f"Only {len(offensive)}/{n_off} offensive candidates found on Ekşi.")
-    return offensive[:n_off] + control[:n_ctrl]
+    1. title search for each lexicon term -> offensive candidates only (controls
+       from topics *about* insults would skew the control set)
+    2. gündem, then the "today" feed      -> offensive candidates and controls
+
+    Entries are classified locally and streamed to `emit` until both quotas are
+    full, the topics run out, or a safety cap on scanned entries is hit.
+    """
+    from .eksi import open_client, read_topic, topic_pool
+
+    quota = _Quota(n_off, n_ctrl, emit)
+    absorber = _Absorber(lexicon, quota, exclude_duplicates)
+    max_scan = max(5000, 40 * (n_off + n_ctrl))
+    n_topics = 0
+
+    def report() -> None:
+        progress(f"Ekşi: offensive {quota.have[OFFENSIVE]}/{n_off}, control {quota.have[CONTROL]}/{n_ctrl} "
+                 f"(scanned {absorber.scanned} entries, {n_topics} topics)")
+
+    capped = False
+
+    def stop() -> bool:
+        nonlocal capped
+        if absorber.scanned >= max_scan:
+            if not capped:
+                progress(f"Ekşi: stopping at the safety cap of {max_scan} scanned entries.")
+            capped = True
+            return True
+        return quota.done()
+
+    with open_client() as client:
+        if n_off > 0:
+            sources = [("search", t.raw) for t in lexicon.terms]
+            title_sink = absorber(f"lexicon:{lexicon.name}", False, "offensive-eksi-title")
+            for topic_id, _ in topic_pool(client, sources, progress, max_pages=EKSI_TITLE_PAGES):
+                if quota.full(OFFENSIVE) or stop():
+                    break
+                n_topics += 1
+                read_topic(client, topic_id, EKSI_PER_TOPIC, "popular", "offensive", "", title_sink, progress)
+                if n_topics % 5 == 0:
+                    report()
+
+        if not stop():
+            mixed_sink = absorber("gündem", True, "offensive-gundem")
+            for topic_id, _ in topic_pool(client, [("popular",), ("today",)], progress):
+                if stop():
+                    break
+                n_topics += 1
+                read_topic(client, topic_id, EKSI_PER_TOPIC, "today", "offensive", "", mixed_sink, progress)
+                if n_topics % 5 == 0:
+                    report()
+
+    report()
+    if quota.have[OFFENSIVE] < n_off:
+        progress(f"Only {quota.have[OFFENSIVE]}/{n_off} offensive candidates found on Ekşi.")
+    if quota.have[CONTROL] < n_ctrl:
+        progress(f"Only {quota.have[CONTROL]}/{n_ctrl} control entries found on Ekşi.")
+    return quota.total
