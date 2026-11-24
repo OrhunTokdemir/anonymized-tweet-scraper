@@ -170,6 +170,10 @@ python -m unittest discover -s tests
 - Ekşi Sözlük does not publish public API docs. `eksiapi` talks to the same `api.eksisozluk.com` endpoints the Android app uses, with an anonymous token. It may break when the app changes. If it does, `pip install -U eksiapi`.
 - Scraping may conflict with the platforms' Terms of Service. Use it for research and respect KVKK/GDPR when storing data.
 
+## Development
+
+This project was built with the help of AI coding assistants. The author designed the architecture, chose the technologies, and reviewed and tested the code.
+
 ## Citation
 
 If you use this project in research or publications, please cite it using the metadata in [`CITATION.cff`](CITATION.cff). On GitHub, the **"Cite this repository"** button in the sidebar gives ready-made APA and BibTeX entries.
