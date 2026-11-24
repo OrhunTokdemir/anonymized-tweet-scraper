@@ -2,6 +2,16 @@
 
 A console program that pulls posts from **Twitter/X** (via [twscrape](https://github.com/vladkens/twscrape)) and **Ekşi Sözlük** (via Ekşi's own mobile API, using the [`eksiapi`](https://github.com/agmmnn/eksiapi) client). It anonymizes them and writes everything into one CSV file.
 
+## Disclaimer
+
+> [!WARNING]
+> This project is intended **for academic and research purposes only**.
+>
+> - Scraping Twitter/X (and Ekşi Sözlük) may **not comply with the platforms' Terms of Service**. By using this software you acknowledge this and accept full responsibility for how you use it.
+> - Do **not** use it for malicious purposes, including harassment, surveillance or profiling of individuals, spam, or any activity that violates the law or the rights of others.
+> - You are responsible for following applicable data-protection laws (e.g. KVKK, GDPR) when collecting, storing, and sharing data.
+> - The software is provided "as is", without warranty (see [LICENSE](LICENSE)). The author is not liable for any misuse or for any consequences, such as account suspensions.
+
 ## Setup (Ubuntu)
 
 ```bash
@@ -168,7 +178,7 @@ python -m unittest discover -s tests
 ## Notes
 
 - Ekşi Sözlük does not publish public API docs. `eksiapi` talks to the same `api.eksisozluk.com` endpoints the Android app uses, with an anonymous token. It may break when the app changes. If it does, `pip install -U eksiapi`.
-- Scraping may conflict with the platforms' Terms of Service. Use it for research and respect KVKK/GDPR when storing data.
+- See the [Disclaimer](#disclaimer) above about Terms of Service and acceptable use.
 
 ## Development
 
