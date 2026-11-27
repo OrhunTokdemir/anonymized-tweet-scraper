@@ -7,8 +7,7 @@ authors:
   orcid: "https://orcid.org/0009-0003-2541-0794"
 title: "anonymized-tweet-scraper"
 version: 1.0.0
-# TODO(owner): set to the actual v1.0.0 release date (YYYY-MM-DD) when you tag it.
-date-released: 2026-11-24
+date-released: 2026-11-28
 # TODO(owner): after the Zenodo release, add the *concept* DOI (it always
 # points to the latest version), e.g.:
 # doi: 10.5281/zenodo.XXXXXXX
