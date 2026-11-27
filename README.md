@@ -273,6 +273,7 @@ This needs the `.venv` from [Quick start](#quick-start). It installs PyInstaller
 ## Troubleshooting
 
 - **Ekşi stopped working**: Ekşi Sözlük does not publish public API docs. `eksiapi` talks to the same `api.eksisozluk.com` endpoints the Android app uses, with an anonymous token, so it may break when the app changes. If it does, run `pip install -U eksiapi`.
+- **Twitter returns 0 tweets**: press **Test selected** in the Accounts tab. The test checks the login *and* one search, because X can refuse search for an account (it treats the account as restricted or suspended, `…SrpDenySuspendedUsers`) while the login and profile lookups still work. If the test says X refuses search, log in to that account at x.com and check for a restriction notice. The app cannot fix this, and you shouldn't try to work around it (see [Ethics & Legal](#ethics--legal)). The official X API is the alternative.
 - **A Twitter run seems stuck**: check the log for the yellow rate-limit line. The run is waiting for an account to free up (see [Rate limits and pacing](#rate-limits-and-pacing)).
 
 ## Development

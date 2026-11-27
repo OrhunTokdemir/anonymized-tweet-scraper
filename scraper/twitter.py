@@ -10,6 +10,7 @@ import tempfile
 from collections.abc import AsyncIterator, Callable
 
 from twscrape import API, NoAccountError, set_log_level
+from twscrape.api import OP_SearchTimeline
 
 from .config import Settings
 from .models import Emit, Post
@@ -156,11 +157,58 @@ async def check_account(settings: Settings, username: str, timeout: float = 60) 
             return False, f"no answer within {int(timeout)}s (rate limit or network/proxy problem)"
         except Exception as exc:  # network errors, parse errors, ...
             return False, f"{exc.__class__.__name__}: {exc}"
-        if user is not None:
-            return True, "works"
-        info = await api.pool.accounts_info()
-        error = info[0]["error_msg"] if info and info[0]["error_msg"] not in ("", "None") else ""
-        return False, error or "X rejected the cookies (expired, logged out, or copied wrong?)"
+        if user is None:
+            info = await api.pool.accounts_info()
+            error = info[0]["error_msg"] if info and info[0]["error_msg"] not in ("", "None") else ""
+            return False, error or "X rejected the cookies (expired, logged out, or copied wrong?)"
+        # A profile lookup also works for accounts X won't let search, so a
+        # passing lookup alone would be a false positive. Try one search too.
+        refusal = await _search_check(api, timeout)
+        if refusal:
+            return False, f"cookies work, but X refuses search for this account. {refusal}"
+        return True, "works"
+
+
+async def _search_check(api: API, timeout: float) -> str | None:
+    """One small search with this account; -> why it failed, or None if it worked.
+
+    Uses twscrape's single-request helper because `search()` turns a refusal
+    into an empty result without telling the caller.
+    """
+    kv = {"rawQuery": "lang:tr", "count": 1, "product": "Latest", "querySource": "typed_query"}
+    try:
+        rep = await asyncio.wait_for(
+            api._gql_item(OP_SearchTimeline, kv, toggles={"withArticleRichContentState": False}), timeout
+        )
+    except TimeoutError:
+        return f"No search answer within {int(timeout)}s (rate limit or network/proxy problem)."
+    except NoAccountError:
+        return "The account is locked for search right now (rate limit or refused by X)."
+    except Exception as exc:  # twscrape raises ApiError etc. for error-only replies
+        return f"X answered the search with an error: {exc}"
+    if rep is None:
+        return "X gave no usable answer to a search."
+    try:
+        return search_refusal(rep.json())
+    except ValueError:
+        return "X's search answer could not be read."
+
+
+def search_refusal(obj: object) -> str | None:
+    """X's reason for refusing a search reply, or None if it looks like a normal result page."""
+    if not isinstance(obj, dict):
+        return "X's search answer had an unexpected format."
+    messages = [str(e.get("message", "")) for e in obj.get("errors") or [] if isinstance(e, dict)]
+    timeline = (((obj.get("data") or {}).get("search_by_raw_query") or {})
+                .get("search_timeline") or {}).get("timeline") or {}
+    entries = sum(len(i.get("entries") or []) for i in timeline.get("instructions") or [])
+    if not messages or entries:
+        return None
+    reason = "; ".join(messages)
+    if "DenySuspendedUsers" in reason:
+        return ("X treats the account as suspended or restricted for search. Log in at x.com "
+                f"to check for a notice. (X said: {reason})")
+    return f"X said: {reason}"
 
 
 async def load_trends(api: API, limit: int = 30) -> list[str]:
@@ -253,6 +301,10 @@ async def fetch_search(
         progress(f"Twitter: {total}/{limit}")
         await watch.check()  # raises if every account is gone, so empty != "no results"
         if not batch:
+            if total == 0:
+                progress("[yellow]X returned no tweets for this search. If that is unexpected, press "
+                         "Test selected in the Accounts tab: X may be refusing search for your "
+                         "accounts.[/yellow]")
             break  # no more results
         max_id = min(seen) - 1
         if total < limit:
