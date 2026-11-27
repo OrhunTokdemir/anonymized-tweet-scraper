@@ -168,7 +168,7 @@ def readme_text(ver: str, portable: bool) -> str:
     title = f"anonymized-tweet-scraper {ver} ({variant})"
     return README_TXT.format(
         version=ver, variant=variant, underline="=" * len(title), start=start, where=where,
-        cmd=cmd, extra=extra, exe=EXE.ljust(26),
+        cmd=cmd, extra=extra, exe=EXE.ljust(25),
         marker_line="  portable                    marker file: keeps everything in this folder\n"
         if portable else "",
     )
