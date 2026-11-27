@@ -220,6 +220,8 @@ __marimo__/
 .streamlit/secrets.toml
 
 # --- project specific ---
+# extra local virtualenv folder
+.v/
 # scraped output (may contain personal data even after anonymization)
 *.csv
 data/

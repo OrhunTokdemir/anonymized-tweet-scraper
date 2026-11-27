@@ -63,7 +63,7 @@ Copy this into your ethics application or data management plan:
 
 Ekşi Sözlük works right away with no setup. Twitter/X needs at least one dedicated account (see [Twitter accounts](#twitter-accounts)). Where you can, use the official X API instead (see [Ethics & Legal](#ethics--legal)).
 
-Commands are shown for Ubuntu/Debian. On other systems, create a Python virtual environment the usual way.
+Requires **Python 3.11 or newer** (tested on 3.11–3.14, on Linux and Windows). Commands are shown for Ubuntu/Debian. On other systems, create a Python virtual environment the usual way.
 
 ```bash
 sudo apt install python3-venv          # on Python 3.14 the package may be python3.14-venv
