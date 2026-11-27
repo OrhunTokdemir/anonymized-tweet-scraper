@@ -114,26 +114,56 @@ def license_files() -> None:
     shutil.copyfile(ROOT / "TERMS_OF_USE.md", DIST / "TERMS_OF_USE.md")
 
 
+def _paths_info(exe: Path, env: dict) -> dict[str, str]:
+    out = run(str(exe), "--paths", env=env, capture_output=True, text=True).stdout
+    return {k.strip(): v.strip() for k, v in (line.split(":", 1) for line in out.splitlines() if ":" in line)}
+
+
+def _inside(path: str, folder: Path) -> bool:
+    """True if `path` is `folder` or below it. Compares real folders, not text:
+    Windows may print the same temp folder as C:\\Users\\RUNNER~1\\... or
+    C:\\Users\\runneradmin\\..., so walk up to the first existing parent and
+    use os.path.samefile."""
+    p = Path(path)
+    while True:
+        if p.exists():
+            break
+        if p.parent == p:
+            return False
+        p = p.parent
+    q = p
+    while True:
+        if os.path.samefile(q, folder):
+            return True
+        if q.parent == q:
+            return False
+        q = q.parent
+
+
 def smoke_test(exe: Path, ver: str) -> None:
     """--version and --paths in a throwaway HOME/APPDATA, in both modes."""
-    with tempfile.TemporaryDirectory() as home:
-        env = dict(os.environ, HOME=home, USERPROFILE=home, APPDATA=str(Path(home, "AppData")),
-                   XDG_DATA_HOME=str(Path(home, "share")), XDG_CONFIG_HOME=str(Path(home, "config")))
+    with tempfile.TemporaryDirectory() as tmp:
+        home = Path(tmp)
+        env = dict(os.environ, HOME=tmp, USERPROFILE=tmp, APPDATA=str(home / "AppData"),
+                   XDG_DATA_HOME=str(home / "share"), XDG_CONFIG_HOME=str(home / "config"))
         out = run(str(exe), "--version", env=env, capture_output=True, text=True).stdout.strip()
         if out != f"{NAME} {ver}":
             raise SystemExit(f"smoke test: --version printed {out!r}")
-        std = run(str(exe), "--paths", env=env, capture_output=True, text=True).stdout
-        if "Mode:                standard" not in std or home not in std:
-            raise SystemExit(f"smoke test: unexpected --paths output (standard):\n{std}")
 
-        portable_dir = Path(home, "portable-copy")
+        std = _paths_info(exe, env)
+        if std.get("Mode") != "standard" or not _inside(std.get("Settings & accounts", ""), home):
+            raise SystemExit(f"smoke test: unexpected --paths output (standard): {std}")
+
+        portable_dir = home / "portable-copy"
         portable_dir.mkdir()
         copy = portable_dir / exe.name
         shutil.copy2(exe, copy)
         (portable_dir / "portable").touch()
-        port = run(str(copy), "--paths", env=env, capture_output=True, text=True).stdout
-        if "Mode:                portable" not in port or str(portable_dir / "data") not in port:
-            raise SystemExit(f"smoke test: unexpected --paths output (portable):\n{port}")
+        port = _paths_info(copy, env)
+        app_dir, csv_dir = port.get("Settings & accounts", ""), port.get("CSV output", "")
+        if (port.get("Mode") != "portable" or not app_dir or not os.path.samefile(app_dir, portable_dir)
+                or Path(csv_dir).name != "data" or not _inside(csv_dir, portable_dir)):
+            raise SystemExit(f"smoke test: unexpected --paths output (portable): {port}")
     print("smoke test passed (version, standard and portable paths)")
 
 
