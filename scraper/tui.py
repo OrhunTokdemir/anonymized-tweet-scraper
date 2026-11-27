@@ -39,7 +39,7 @@ from .output import CsvStream, list_outputs
 from .twitter import TW_METHODS, ScrapeError
 
 ACCOUNTS_HELP = (
-    "[b]Add a Twitter account[/b] (use a throwaway account, never your personal one):\n"
+    "[b]Add a Twitter account[/b] (use a dedicated account, never your personal one):\n"
     "1. Log in at x.com in your browser.  2. Press F12 → [b]Application[/b] (Chrome) or [b]Storage[/b] (Firefox) "
     "→ Cookies → https://x.com.  3. Copy the [b]Value[/b] of [i]auth_token[/i] and [i]ct0[/i] into the fields below.\n"
     "[dim]Tarayıcıda x.com'a gir → F12 → Application/Storage → Cookies → https://x.com → "
@@ -159,7 +159,7 @@ class ScraperApp(App):
                 with VerticalScroll():
                     yield Static(ACCOUNTS_HELP, classes="help")
                     with Vertical(classes="group"):
-                        yield row("Username", Input(placeholder="your_throwaway_account", id="acc-username"))
+                        yield row("Username", Input(placeholder="your_dedicated_account", id="acc-username"))
                         yield row("auth_token", Input(placeholder="paste auth_token value", password=True,
                                                       id="acc-auth-token"))
                         yield row("ct0", Input(placeholder="paste ct0 value", password=True, id="acc-ct0"))

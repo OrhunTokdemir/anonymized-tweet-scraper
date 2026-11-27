@@ -22,11 +22,22 @@ MENTION_TOKEN = "@username"
 NAME_TOKEN = "#username"
 
 _EMAIL_RE = re.compile(r"[\w.+-]+@[\w-]+(?:\.[\w-]+)+")
-_PHONE_RE = re.compile(r"(?<!\w)\+?\d[\d\s().-]{8,}\d(?!\w)")
+# Candidate phone numbers; _redact_phone keeps only those with >= MIN_PHONE_DIGITS digits.
+# A match may not start with a date (2026-11-15, 15.11.2026), so dates, times and
+# search filters such as since:2026-01-01 are left alone.
+_PHONE_RE = re.compile(
+    r"(?<!\w)(?!\d{4}-\d{2}-\d{2}(?!\d)|\d{1,2}[./-]\d{1,2}[./-]\d{4}(?!\d))"
+    r"\(?\+?\d[\d\s().-]{8,}\d(?!\w)"
+)
+MIN_PHONE_DIGITS = 10
 _EKSI_REF_RE = re.compile(r"\((bkz|ara|u)\s*:\s*@[^)]*\)", re.IGNORECASE)
 _MENTION_RE = re.compile(r"(?<![\w@])@\w+")
+# Profile/status links. Only X's own pages (i/..., hashtag/..., intent/..., and
+# exactly /search, /home, /explore) are kept; a username that merely starts with
+# "home" or "search" is still a profile link.
 _X_URL_RE = re.compile(
-    r"https?://(?:www\.|mobile\.)?(?:x|twitter)\.com/(?!i/|hashtag/|search|home|intent/)\w+\S*",
+    r"https?://(?:www\.|mobile\.)?(?:x|twitter)\.com/"
+    r"(?!(?:i|hashtag|intent)/|(?:search|home|explore)(?:[/?#]|$|\s))\w+\S*",
     re.IGNORECASE,
 )
 _EKSI_USER_URL_RE = re.compile(r"https?://(?:www\.)?eksisozluk\.com/biri/\S+", re.IGNORECASE)
@@ -112,8 +123,13 @@ def anonymize_text(
     text = _EKSI_REF_RE.sub(lambda m: f"({m.group(1).lower()}: {MENTION_TOKEN})", text)
     text = _MENTION_RE.sub(MENTION_TOKEN, text)
     text = (redactor or NameRedactor(known_names)).sub(text)
-    text = _PHONE_RE.sub("[phone]", text)
+    text = _PHONE_RE.sub(_redact_phone, text)
     return text
+
+
+def _redact_phone(m: re.Match[str]) -> str:
+    digits = sum(c.isdigit() for c in m.group())
+    return "[phone]" if digits >= MIN_PHONE_DIGITS else m.group()
 
 
 _OPERATOR_RE = re.compile(r"\b(from|to|list|url):\S+", re.IGNORECASE)

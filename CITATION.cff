@@ -1,26 +1,37 @@
 cff-version: 1.2.0
 message: "If you use this software, please cite it as below."
+type: software
 authors:
 - family-names: "Tokdemir"
   given-names: "Doğan Orhun"
   orcid: "https://orcid.org/0009-0003-2541-0794"
 title: "anonymized-tweet-scraper"
 version: 1.0.0
+# TODO(owner): set to the actual v1.0.0 release date (YYYY-MM-DD) when you tag it.
 date-released: 2026-11-24
+# TODO(owner): after the Zenodo release, add the *concept* DOI (it always
+# points to the latest version), e.g.:
+# doi: 10.5281/zenodo.XXXXXXX
 url: "https://github.com/OrhunTokdemir/anonymized-tweet-scraper"
+repository-code: "https://github.com/OrhunTokdemir/anonymized-tweet-scraper"
 license: MIT
 abstract: >-
   A terminal application that collects public posts from Twitter/X and
-  Ekşi Sözlük, anonymizes them, and writes them to CSV for research. It
-  includes a batch mode that builds Turkish offensive-language datasets
-  from a seed lexicon, with weakly labeled offensive candidates and
+  Ekşi Sözlük, pseudonymizes them (removing usernames, mentions, profile
+  links, e-mail addresses and phone numbers), and writes them to CSV for
+  research. It includes a batch mode that builds Turkish offensive-language
+  datasets from a seed lexicon, with weakly labeled offensive candidates and
   control posts.
 keywords:
   - web scraping
+  - scraper
   - twitter
+  - x
   - ekşi sözlük
+  - eksi sozluk
   - anonymization
   - turkish
   - offensive language
   - natural language processing
+  - nlp
   - dataset
