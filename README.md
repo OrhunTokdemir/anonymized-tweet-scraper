@@ -2,9 +2,7 @@
 
 [![CI](https://github.com/OrhunTokdemir/anonymized-tweet-scraper/actions/workflows/ci.yml/badge.svg)](https://github.com/OrhunTokdemir/anonymized-tweet-scraper/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
-<!-- TODO(owner): after the Zenodo release, add the DOI badge (use the concept DOI):
-[![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.XXXXXXX.svg)](https://doi.org/10.5281/zenodo.XXXXXXX)
--->
+[![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.24612729.svg)](https://doi.org/10.5281/zenodo.24612729)
 
 A terminal app that pulls posts from **Twitter/X** (via [twscrape](https://github.com/vladkens/twscrape)) and **Ekşi Sözlük** (via Ekşi's own mobile API, using the [`eksiapi`](https://github.com/agmmnn/eksiapi) client). It anonymizes them and writes everything into one CSV file.
 
@@ -330,7 +328,7 @@ If you use this software in research or publications, please cite it. The metada
 
 **APA**
 
-> Tokdemir, D. O. (2026). *anonymized-tweet-scraper* (Version 1.0.0) [Computer software]. https://github.com/OrhunTokdemir/anonymized-tweet-scraper
+> Tokdemir, D. O. (2026). *anonymized-tweet-scraper* (Version 1.0.0) [Computer software]. Zenodo. https://doi.org/10.5281/zenodo.24612729
 
 **BibTeX**
 
@@ -339,13 +337,14 @@ If you use this software in research or publications, please cite it. The metada
   author  = {Tokdemir, Doğan Orhun},
   title   = {anonymized-tweet-scraper},
   version = {1.0.0},
+  doi     = {10.5281/zenodo.24612729},
   year    = {2026},
   url     = {https://github.com/OrhunTokdemir/anonymized-tweet-scraper},
   license = {MIT}
 }
 ```
 
-<!-- TODO(owner): after the Zenodo release, add `doi = {10.5281/zenodo.XXXXXXX}` to the BibTeX entry and the DOI link to the APA line. -->
+The DOI [`10.5281/zenodo.24612729`](https://doi.org/10.5281/zenodo.24612729) always points to the newest version. To cite exactly the version you used, take its own DOI from the [Zenodo page](https://doi.org/10.5281/zenodo.24612729) (v1.0.0: `10.5281/zenodo.24612730`).
 
 In your methods section, also report the **version** you used and, for the offensive-language batch, the **lexicon** you used (the git commit of `lexicons/tr_offensive.txt`, or your own lexicon). The results depend on both.
 

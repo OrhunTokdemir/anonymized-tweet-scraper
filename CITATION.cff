@@ -8,9 +8,8 @@ authors:
 title: "anonymized-tweet-scraper"
 version: 1.0.0
 date-released: 2026-11-28
-# TODO(owner): after the Zenodo release, add the *concept* DOI (it always
-# points to the latest version), e.g.:
-# doi: 10.5281/zenodo.XXXXXXX
+# Zenodo concept DOI: always resolves to the newest version
+doi: 10.5281/zenodo.24612729
 url: "https://github.com/OrhunTokdemir/anonymized-tweet-scraper"
 repository-code: "https://github.com/OrhunTokdemir/anonymized-tweet-scraper"
 license: MIT
