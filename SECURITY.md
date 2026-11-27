@@ -15,7 +15,7 @@ Include a description, the steps to reproduce, and the affected version. **Never
 ## What counts
 
 - **Credential exposure:** account cookies, tokens or `.env` contents leaking into logs, CSV files, file names, error messages, or builds.
-- **Anonymization bypass:** a username, display name, profile link, user or post id, e-mail address or phone number that ends up in the output despite the rules in [docs/anonymization.md](docs/anonymization.md). The limits listed under "What this does NOT protect against" are known and documented; they are not vulnerabilities, but suggestions for improving them are welcome as normal issues.
+- **Anonymization bypass:** a username, display name, profile link, user or post id, e-mail address or phone number that ends up in the output despite the rules in the README's [Anonymization](README.md#anonymization) section. The limits listed under [Known limitations](README.md#known-limitations) are known and documented; they are not vulnerabilities, but suggestions for improving them are welcome as normal issues.
 - **Unsafe file handling:** for example writing outside the app folder, or overwriting user files unexpectedly.
 
 Getting blocked or suspended by a platform is not a security issue (see Ethics & Legal in the README).

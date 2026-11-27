@@ -33,8 +33,8 @@ python -m unittest discover -s tests
 - Match the style of the surrounding code: type hints, short docstrings, `from __future__ import annotations`.
 - Core modules (`twitter.py`, `eksi.py`, `offensive.py`, `output.py`) report progress through the `progress(str)` callback. Never call `print()` from them; it corrupts the terminal UI.
 - **All output goes through `scraper/anonymize.py`.** Don't add columns with user ids, usernames, display names, profile URLs, or raw post ids/URLs.
-- If you change an anonymization rule, add a test in `tests/test_anonymize.py` and update `docs/anonymization.md`.
-- If you change a column, update `scraper/models.py`, `docs/output-schema.md` and the README.
+- If you change an anonymization rule, add a test in `tests/test_anonymize.py` and update the README's Anonymization section.
+- If you change a column, update `scraper/models.py` and the README's Output section.
 - Use `scraper/paths.py` (`APP_DIR`, `RESOURCE_DIR`) instead of `__file__` for file paths, so frozen builds work.
 - Only `scraper/envfile.py` may write `.env`.
 - Don't add features whose purpose is to get around platform rate limits, blocks or suspensions (see Ethics & Legal in the README).

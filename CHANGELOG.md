@@ -18,7 +18,7 @@ First public release for research use.
 - Informational flags: `--version`, `--paths` (where settings, accounts and CSVs are stored), `--terms`, `--help`.
 - Cross-platform build script `build.py`, which also smoke-tests the program and packages both downloads (`build.sh` now calls it).
 - Rows stream to disk; stopped or crashed runs still save what they collected, and runs can append to an existing file.
-- Documentation: anonymization rules and their limits (`docs/anonymization.md`), the CSV schema (`docs/output-schema.md`), and the offensive-batch method and biases (`docs/offensive-batch.md`).
+- README documentation of the anonymization rules and their limits, the CSV columns, and the offensive-batch method and biases.
 - README sections: Ethics & Legal (X Terms of Service, EU DSA Art. 40, KVKK/GDPR, special-category data), a responsible-use checklist, known limitations, and how to cite.
 - `CITATION.cff`, CI on Ubuntu and Windows (Python 3.11–3.14), and contributor documentation.
 

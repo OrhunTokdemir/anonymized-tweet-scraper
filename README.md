@@ -15,7 +15,7 @@ A terminal app that pulls posts from **Twitter/X** (via [twscrape](https://githu
 - **Polite pacing**: built-in delays between requests, and the run pauses on its own when X's rate limits are reached.
 - **Long runs are safe**: rows stream to disk, and a stopped or crashed run still saves what it collected.
 
-**Documentation:** [anonymization rules](docs/anonymization.md) · [output schema](docs/output-schema.md) · [offensive-language batch](docs/offensive-batch.md) · [known limitations](#known-limitations)
+**Documentation:** [anonymization](#anonymization) · [output](#output) · [offensive-language batch](#offensive-language-batch-for-ml) · [known limitations](#known-limitations)
 
 ## Disclaimer
 
@@ -209,7 +209,7 @@ This tab builds a Turkish dataset that mixes offensive-language **candidates** w
 - **Twitter**: lexicon terms are combined into `(t1 OR t2 ...) lang:tr -filter:retweets` queries under X's length limit. The program fetches from every query so one word doesn't dominate. Control tweets come from a generic Turkish query that excludes lexicon words. A control tweet that still contains one moves to the offensive group.
 - **Ekşi**: there is no site-wide full-text search, so the program pulls topics from (1) a title search for each lexicon term, which only adds offensive candidates, and (2) gündem and then the "today" feed, which add both groups. It checks every entry against the lexicon locally and keeps going until both counts are reached. That is roughly 1 s per page of 10 entries. Truly offensive entries are rare outside insult-titled topics, so large Ekşi counts can take hours. A safety cap stops after `max(5000, 40 × requested)` scanned entries.
 - **Offensive %** sets the mix (e.g. 50 means half offensive candidates, half control). Rows are shuffled. "Exclude near-duplicate texts" (on by default) removes posts whose text is identical after normalization (case, leetspeak, stretched letters, placeholders). This matters for ML, because copies leak between train and test sets. Texts that differ by a word aren't caught.
-- **Extra CSV columns**: `sample_group` (`offensive_candidate` / `control`), `matched_terms`, `matched_categories`. In this mode the `query` column holds only a short label for the source the row came from (`lexicon:tr_offensive`, `control`, or `gündem` for Ekşi gündem and "today" entries), not the long `OR` search string. The label is in `sample_group`. Details: [docs/offensive-batch.md](docs/offensive-batch.md).
+- **Extra CSV columns**: `sample_group` (`offensive_candidate` / `control`), `matched_terms`, `matched_categories`. In this mode the `query` column holds only a short label for the source the row came from (`lexicon:tr_offensive`, `control`, or `gündem` for Ekşi gündem and "today" entries), not the long `OR` search string. The label is in `sample_group`.
 - **File name**: `data/YYYYMMDD-HHMMSS_offensive_tw<N>_eksi<M>_<lexicon>.csv`
 
 > **These are weak labels.** A keyword hit is not the same as offensive content (a swear word between friends is often just banter), and many offensive posts contain no listed word (sarcasm, threats, new slang). Have the rows annotated by people, ideally two annotators with an agreement check, before training. The control group is "no lexicon hit", not "verified clean".
@@ -227,7 +227,7 @@ This tab builds a Turkish dataset that mixes offensive-language **candidates** w
 
 No user ids, usernames, post ids/URLs, or hashes of any of them are written.
 
-**Limits:** this is pseudonymization, not perfect anonymity. Exact tweet text plus a timestamp can often be found again with a web search. If you publish a dataset, consider rounding `created_at` or paraphrasing. Names (usernames and display names) shorter than 3 characters are not replaced as bare words, to avoid mangling ordinary text. The full rule list, a worked example, and what the rules *don't* catch are in [docs/anonymization.md](docs/anonymization.md).
+**Limits:** this is pseudonymization, not perfect anonymity. Exact tweet text plus a timestamp can often be found again with a web search. If you publish a dataset, consider rounding `created_at` or paraphrasing. Names (usernames and display names) shorter than 3 characters are not replaced as bare words, to avoid mangling ordinary text.
 
 ## Output
 
@@ -239,7 +239,7 @@ No user ids, usernames, post ids/URLs, or hashes of any of them are written.
 
 The file is UTF-8 with a BOM, so Turkish characters display correctly in Excel and LibreOffice.
 
-**Columns:** `row, source, method, query, topic, text, created_at, lang, like_count, repost_count, reply_count, quote_count, view_count, favorite_count, hashtags, post_type, sample_group, matched_terms, matched_categories`. Types, meanings and examples are in [docs/output-schema.md](docs/output-schema.md).
+**Columns:** `row, source, method, query, topic, text, created_at, lang, like_count, repost_count, reply_count, quote_count, view_count, favorite_count, hashtags, post_type, sample_group, matched_terms, matched_categories`.
 
 The `query` column is anonymized too: `from:someone` becomes `from:username`. For user, replies and list methods the column only says `@username`, `tweet-replies` or `list`.
 
@@ -261,13 +261,11 @@ Each tab has an **Output** choice: `New file` (default), or `Append to …` for 
 
 ## Known limitations
 
-- **Pseudonymized, not anonymous.** Text is kept word for word, and `created_at` at full precision, so posts can often be traced back to their authors. Hashtags, Ekşi topic titles and links to other sites are not redacted. Bare names are caught only if they were seen in the same run. See [docs/anonymization.md](docs/anonymization.md#what-this-does-not-protect-against).
-- **Weak labels and biased sampling.** The offensive batch labels by keyword. It over-samples explicit slurs, misses implicit hate, and its controls aren't verified clean. The lexicon was compiled by hand with AI help and hasn't been validated. See [docs/offensive-batch.md](docs/offensive-batch.md#known-biases-and-limitations).
+- **Pseudonymized, not anonymous.** Text is kept word for word, and `created_at` at full precision, so posts can often be traced back to their authors. Hashtags, Ekşi topic titles and links to other sites are not redacted. Bare names are caught only if they were seen in the same run.
+- **Weak labels and biased sampling.** The offensive batch labels by keyword. It over-samples explicit slurs, misses implicit hate, and its controls aren't verified clean. The lexicon was compiled by hand with AI help and hasn't been validated.
 - **Unofficial Ekşi API.** `eksiapi` uses Ekşi's undocumented mobile API, so it can break without warning.
 - **Pacing applies to searches only.** The `TW_DELAY_*` pause is added between search chunks only. The user, replies and list methods rely on twscrape's rate-limit handling (see [Rate limits and pacing](#rate-limits-and-pacing)).
 - **Platform behavior.** What X and Ekşi return depends on their search ranking, moderation, and the time of collection, none of which the tool controls.
-
-Full column reference: [docs/output-schema.md](docs/output-schema.md).
 
 ## Configuration
 
