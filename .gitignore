@@ -230,3 +230,9 @@ accounts.db
 .env
 .env.*
 !.env.example
+
+#recent md files
+anonymization.md
+offensive-batch.md
+output-schema.md
+TASK_research_ready_release.md
