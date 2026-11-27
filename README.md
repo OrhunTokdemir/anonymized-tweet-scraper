@@ -44,6 +44,8 @@ A terminal app that pulls posts from **Twitter/X** (via [twscrape](https://githu
 
 **Ethics approval.** Get approval from your ethics committee (IRB/REC) **before** you collect data, not after.
 
+**Terms of use.** On first start the app shows its [terms of use](TERMS_OF_USE.md) (English and Turkish) and only continues after you accept them. Acceptance is stored only on your computer and you are asked again when the terms change. `--terms` prints them.
+
 ## Responsible use checklist
 
 Copy this into your ethics application or data management plan:
@@ -59,7 +61,34 @@ Copy this into your ethics application or data management plan:
 - [ ] Special-category data handled per KVKK Art. 6 / GDPR Art. 9
 ```
 
-## Quick start
+## Download
+
+Ready-made programs for **Linux** (tested on Ubuntu 26.04.1 LTS) and **Windows 10/11** are on the [Releases page](https://github.com/OrhunTokdemir/anonymized-tweet-scraper/releases). No Python needed. Each platform has two downloads:
+
+| Download | Pick it if | Where files go |
+| --- | --- | --- |
+| **standard** (`…-linux-x86_64.tar.gz`, `…-windows-x86_64.zip`) | you want a normal per-user install | settings and accounts: `~/.local/share/anonymized-tweet-scraper` (Linux), `%APPDATA%\anonymized-tweet-scraper` (Windows). **CSV files: your Documents folder, in `anonymized-posts`** (e.g. `~/Belgeler/anonymized-posts` on a Turkish Ubuntu) |
+| **portable** (`…-portable.tar.gz`, `…-portable.zip`) | you want everything in one folder, e.g. on a USB stick | everything stays in the unpacked folder; CSV files go to its `data/` folder |
+
+You can change the CSV folder in the app: **Accounts & settings → Output folder → Save**. **Use default** switches back.
+
+**Verify the download** (recommended): download `SHA256SUMS.txt` from the same release, then
+
+```bash
+sha256sum -c SHA256SUMS.txt --ignore-missing      # Linux
+```
+```powershell
+Get-FileHash .\anonymized-tweet-scraper-v1.0.0-windows-x86_64.zip   # Windows: compare with SHA256SUMS.txt
+```
+
+**Run it**
+
+- Linux: `tar xzf anonymized-tweet-scraper-v*-linux-x86_64.tar.gz && cd anonymized-tweet-scraper && ./anonymized-tweet-scraper`. Optionally move the standard program onto your PATH: `mv anonymized-tweet-scraper ~/.local/bin/`.
+- Windows: unzip, open **Windows Terminal** in the folder and run `.\anonymized-tweet-scraper.exe`. The old console window displays the app poorly. The program is not code-signed, so SmartScreen may warn on first start ("More info" → "Run anyway"); check the checksum first.
+
+`anonymized-tweet-scraper --paths` prints the exact folders on your computer, and `--version` the version. Keep `.env` and `accounts.db` private: they hold your Twitter account cookies.
+
+## Quick start (from source)
 
 Ekşi Sözlük works right away with no setup. Twitter/X needs at least one dedicated account (see [Twitter accounts](#twitter-accounts)). Where you can, use the official X API instead (see [Ethics & Legal](#ethics--legal)).
 
@@ -73,7 +102,7 @@ pip install -r requirements.txt
 python -m scraper
 ```
 
-Later runs only need `source .venv/bin/activate` and `python -m scraper`. If you don't want to install Python, build a [standalone executable](#standalone-executable).
+Later runs only need `source .venv/bin/activate` and `python -m scraper`. If you don't want to install Python, use a [download](#download). From source, settings and accounts live in the project folder and CSVs go to `data/`.
 
 ## Twitter accounts
 
@@ -81,7 +110,7 @@ Use a dedicated account, never your personal one.
 
 ### Adding an account
 
-Go to the app's **Accounts** tab:
+Go to the app's **Accounts & settings** tab:
 
 1. Log in at x.com in your browser.
 2. Press F12 → **Application** (Chrome) or **Storage** (Firefox) → Cookies → `https://x.com`.
@@ -139,7 +168,7 @@ The app is built to stay under X's rate limits, not to get around them.
 
 - **Scrape**: Twitter and/or Ekşi posts on any topic.
 - **Offensive batch**: a Turkish offensive-language dataset for ML (see [below](#offensive-language-batch-for-ml)).
-- **Accounts**: add, test and remove Twitter accounts (see [Twitter accounts](#twitter-accounts)).
+- **Accounts & settings**: add, test and remove Twitter accounts, and choose the CSV output folder (see [Twitter accounts](#twitter-accounts)).
 
 ### Twitter methods
 
@@ -242,7 +271,7 @@ Full column reference: [docs/output-schema.md](docs/output-schema.md).
 
 ## Configuration
 
-Settings live in `.env`, next to the app. `.env.example` documents every setting. The **Accounts** tab writes the account entries for you.
+Settings live in `.env`, in the settings folder (`--paths` shows where: the project folder from source, the unpacked folder for portable, the per-user folder for standard). `.env.example` documents every setting. The **Accounts & settings** tab writes the account entries and the output folder for you.
 
 | Setting | Default | What it does |
 | --- | --- | --- |
@@ -251,29 +280,34 @@ Settings live in `.env`, next to the app. `.env.example` documents every setting
 | `TW_DELAY_MIN` / `TW_DELAY_MAX` | `3` / `8` | Random pause between chunks, in seconds |
 | `EKSI_MAX_PER_TOPIC` | `10` | Max entries taken from any one Ekşi topic |
 | `OFFENSIVE_LEXICON` | `lexicons/tr_offensive.txt` | Default lexicon for the offensive batch |
-| `OUTPUT_DIR` | `data` | Where CSV files are written |
+| `OUTPUT_DIR` | *(empty)* | Where CSV files are written. Empty means the default: `Documents/anonymized-posts` (standard download) or `data/` (portable and source). Set it in Accounts & settings → Output folder |
 | `TWSCRAPE_DB` | `accounts.db` | twscrape's account and session database |
 
-## Standalone executable
+## Building the programs yourself
 
 ```bash
-./build.sh
+./build.sh            # Linux; same as: .venv/bin/python build.py
+```
+```powershell
+.venv\Scripts\python build.py   # Windows
 ```
 
-This needs the `.venv` from [Quick start](#quick-start). It installs PyInstaller into `.venv` and produces:
+This needs the `.venv` from [Quick start](#quick-start-from-source). It installs PyInstaller into `.venv`, builds one executable, checks it (`--version` and `--paths` in standard and portable mode, in a throwaway home folder), and writes:
 
 | File | What it is |
 | --- | --- |
-| `dist/scraper` | the app as one executable (run `./scraper`, no Python needed) |
-| `dist/LICENSE` | this project's license |
-| `dist/THIRD_PARTY_LICENSES.txt` | licenses of everything bundled inside: Python itself and every runtime package (twscrape, eksiapi, Textual, python-dotenv and their dependencies) |
+| `dist/anonymized-tweet-scraper[.exe]` | the app as one executable, no Python needed |
+| `dist/release/…-<os>-x86_64.{tar.gz,zip}` | the **standard** download |
+| `dist/release/…-<os>-x86_64-portable.{tar.gz,zip}` | the **portable** download (contains the `portable` marker file) |
 
-**Always ship the whole `dist/` folder.** The bundled libraries' licenses (MIT, BSD, Apache-2.0) require their notices to travel with any copy of their code. `build.sh` regenerates the license file on every build (via `tools/third_party_licenses.py`), so it stays in sync when dependencies change. `.env`, `accounts.db` and `data/` are created next to the executable on first use.
+Each archive contains the program, `LICENSE`, `THIRD_PARTY_LICENSES.txt`, `TERMS_OF_USE.md` and a short `README.txt`. **Always ship the whole archive.** The bundled libraries' licenses (MIT, BSD, Apache-2.0) require their notices to travel with any copy of their code; `build.py` regenerates `THIRD_PARTY_LICENSES.txt` on every build (via `tools/third_party_licenses.py`). PyInstaller can't cross-compile: build the Linux program on Linux and the Windows program on Windows.
+
+Releases are built by [`.github/workflows/release.yml`](.github/workflows/release.yml) when a `v*.*.*` tag is pushed (the tag must match `__version__` in `scraper/__init__.py`). Running the workflow by hand builds the archives without publishing a release.
 
 ## Troubleshooting
 
 - **Ekşi stopped working**: Ekşi Sözlük does not publish public API docs. `eksiapi` talks to the same `api.eksisozluk.com` endpoints the Android app uses, with an anonymous token, so it may break when the app changes. If it does, run `pip install -U eksiapi`.
-- **Twitter returns 0 tweets**: press **Test selected** in the Accounts tab. The test checks the login *and* one search, because X can refuse search for an account (it treats the account as restricted or suspended, `…SrpDenySuspendedUsers`) while the login and profile lookups still work. If the test says X refuses search, log in to that account at x.com and check for a restriction notice. The app cannot fix this, and you shouldn't try to work around it (see [Ethics & Legal](#ethics--legal)). The official X API is the alternative.
+- **Twitter returns 0 tweets**: press **Test selected** in the Accounts & settings tab. The test checks the login *and* one search, because X can refuse search for an account (it treats the account as restricted or suspended, `…SrpDenySuspendedUsers`) while the login and profile lookups still work. If the test says X refuses search, log in to that account at x.com and check for a restriction notice. The app cannot fix this, and you shouldn't try to work around it (see [Ethics & Legal](#ethics--legal)). The official X API is the alternative.
 - **A Twitter run seems stuck**: check the log for the yellow rate-limit line. The run is waiting for an account to free up (see [Rate limits and pacing](#rate-limits-and-pacing)).
 
 ## Development

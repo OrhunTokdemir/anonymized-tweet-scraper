@@ -5,6 +5,8 @@ from __future__ import annotations
 import asyncio
 import os
 import re
+import sys
+import tempfile
 import threading
 from collections.abc import Callable
 
@@ -14,6 +16,7 @@ from rich.markup import escape
 from textual import on, work
 from textual.app import App, ComposeResult
 from textual.containers import Horizontal, Vertical, VerticalScroll
+from textual.screen import ModalScreen
 from textual.widget import Widget
 from textual.widgets import (
     Button,
@@ -23,6 +26,7 @@ from textual.widgets import (
     Header,
     Input,
     Label,
+    Markdown,
     RichLog,
     Select,
     Static,
@@ -30,8 +34,9 @@ from textual.widgets import (
     TabPane,
 )
 
-from . import envfile
+from . import __version__, envfile, terms
 from .config import Settings, env_example_path, env_path, load_settings
+from .paths import APP_DIR, MODE, ensure_app_dir
 from .eksi import EKSI_METHODS, EKSI_ORDERS
 from pathlib import Path
 
@@ -82,6 +87,40 @@ def int_value(app: App, selector: str) -> int:
     return int(raw) if raw.lstrip("-").isdigit() else 0
 
 
+class TermsScreen(ModalScreen[bool]):
+    """First-run terms of use. Dismisses with True (accepted) or False (quit)."""
+
+    BINDINGS = [("escape", "quit_terms", "Quit")]
+
+    def __init__(self, version: int, text: str) -> None:
+        super().__init__(id="terms-screen")
+        self.version = version
+        self.text = text
+
+    def compose(self) -> ComposeResult:
+        with Vertical(id="terms-box"):
+            yield Label(f"Terms of use / Kullanım koşulları (v{self.version})", classes="group-title")
+            with VerticalScroll(id="terms-scroll"):
+                yield Markdown(self.text)
+            yield Checkbox("I have read and accept these terms / Okudum ve kabul ediyorum", id="terms-check")
+            with Horizontal(classes="actions"):
+                yield Button("Quit / Çık", variant="error", id="terms-quit")
+                yield Button("Accept / Kabul et", variant="primary", id="terms-accept", disabled=True)
+
+    @on(Checkbox.Changed, "#terms-check")
+    def check_changed(self, event: Checkbox.Changed) -> None:
+        self.query_one("#terms-accept", Button).disabled = not event.value
+
+    @on(Button.Pressed, "#terms-accept")
+    def accept(self) -> None:
+        if self.query_one("#terms-check", Checkbox).value:
+            self.dismiss(True)
+
+    @on(Button.Pressed, "#terms-quit")
+    def action_quit_terms(self) -> None:
+        self.dismiss(False)
+
+
 class ScraperApp(App):
     CSS_PATH = "app.tcss"
     TITLE = "Anonymized Post Scraper"
@@ -98,6 +137,8 @@ class ScraperApp(App):
         self._api = None
         self._api_lock = asyncio.Lock()
         self.busy = False
+        self.terms_version, self.terms_text = terms.load_terms()
+        self.terms_ok = terms.is_accepted(APP_DIR, self.terms_version)
 
     # ------------------------------------------------------------------ layout
     def compose(self) -> ComposeResult:
@@ -155,8 +196,14 @@ class ScraperApp(App):
                         yield Button("Stop", variant="error", id="stop-offensive", disabled=True)
                         yield Button("Build offensive batch", variant="warning", id="start-offensive")
 
-            with TabPane("Accounts", id="tab-accounts"):
+            with TabPane("Accounts & settings", id="tab-accounts"):
                 with VerticalScroll():
+                    with Vertical(classes="group"):
+                        yield Label("Output folder", classes="group-title")
+                        yield row("CSV folder", Input(self.settings.output_dir, id="out-dir"))
+                        with Horizontal(classes="actions"):
+                            yield Button("Use default", id="out-dir-default")
+                            yield Button("Save", variant="primary", id="out-dir-save")
                     yield Static(ACCOUNTS_HELP, classes="help")
                     with Vertical(classes="group"):
                         yield row("Username", Input(placeholder="your_dedicated_account", id="acc-username"))
@@ -200,8 +247,30 @@ class ScraperApp(App):
         self.refresh_outputs()
         self.say("[b]Ready.[/b] Fill in the form and press [b]Start[/b] (ctrl+s). "
                  "Stop a run with ctrl+x (keeps what was collected). Quit with ctrl+q.")
+        self.say(f"[dim]Settings & accounts: {APP_DIR} · CSV output: {self.settings.output_dir} "
+                 f"({MODE} mode)[/dim]")
         if not self.settings.accounts:
-            self.say("[yellow]No Twitter accounts yet: only Ekşi works. Add one in the Accounts tab.[/yellow]")
+            self.say("[yellow]No Twitter accounts yet: only Ekşi works. "
+                     "Add one in the Accounts & settings tab.[/yellow]")
+        if not self.terms_ok:
+            self.push_screen(TermsScreen(self.terms_version, self.terms_text), self._terms_done)
+
+    def _terms_done(self, accepted: bool | None) -> None:
+        if not accepted:
+            self.exit()
+            return
+        try:
+            terms.record_acceptance(APP_DIR, self.terms_version)
+        except OSError as exc:  # still let them use the app this session
+            self.say(f"[yellow]Could not save the terms acceptance: {exc}[/yellow]")
+        self.terms_ok = True
+        self.say(f"[green]Terms of use v{self.terms_version} accepted.[/green]")
+
+    def terms_gate(self) -> bool:
+        """Runs may only start after the terms were accepted."""
+        if not self.terms_ok and not isinstance(self.screen, TermsScreen):
+            self.push_screen(TermsScreen(self.terms_version, self.terms_text), self._terms_done)
+        return self.terms_ok
 
     # ----------------------------------------------------------------- helpers
     def say(self, message: str) -> None:
@@ -212,7 +281,8 @@ class ScraperApp(App):
 
     def set_busy(self, busy: bool) -> None:
         self.busy = busy
-        for bid in ("#start-scrape", "#start-offensive", "#scrape-output", "#off-output"):
+        for bid in ("#start-scrape", "#start-offensive", "#scrape-output", "#off-output",
+                    "#out-dir-save", "#out-dir-default"):
             self.query_one(bid).disabled = busy
         for bid in ("#stop-scrape", "#stop-offensive"):
             self.query_one(bid, Button).disabled = not busy
@@ -312,11 +382,13 @@ class ScraperApp(App):
 
     @on(Button.Pressed, "#start-scrape")
     def start_scrape_pressed(self) -> None:
-        self.run_scrape()
+        if self.terms_gate():
+            self.run_scrape()
 
     @on(Button.Pressed, "#start-offensive")
     def start_offensive_pressed(self) -> None:
-        self.run_offensive()
+        if self.terms_gate():
+            self.run_offensive()
 
     @on(Button.Pressed, "#stop-scrape")
     @on(Button.Pressed, "#stop-offensive")
@@ -345,6 +417,46 @@ class ScraperApp(App):
         if name := self.selected_account():
             self.remove_account(name)
 
+    @on(Button.Pressed, "#out-dir-save")
+    def out_dir_save_pressed(self) -> None:
+        raw = self.query_one("#out-dir", Input).value.strip()
+        if not raw:
+            self.say("[red]Enter a folder, or press Use default.[/red]")
+            return
+        folder = Path(raw).expanduser()
+        if not folder.is_absolute():
+            folder = (APP_DIR / folder).resolve()
+        try:
+            folder.mkdir(parents=True, exist_ok=True)
+            with tempfile.NamedTemporaryFile(dir=folder, prefix=".write-test-"):
+                pass
+        except OSError as exc:
+            self.say(f"[red]Can't write to {folder}: {exc.strerror or exc}[/red]")
+            return
+        try:
+            envfile.ensure_env(env_path(), env_example_path())
+            envfile.set_setting(env_path(), "OUTPUT_DIR", str(folder))
+        except (OSError, ValueError) as exc:
+            self.say(f"[red]Could not save the setting: {exc}[/red]")
+            return
+        self._apply_output_dir()
+
+    @on(Button.Pressed, "#out-dir-default")
+    def out_dir_default_pressed(self) -> None:
+        try:
+            if env_path().exists():
+                envfile.unset_setting(env_path(), "OUTPUT_DIR")
+        except (OSError, ValueError) as exc:
+            self.say(f"[red]Could not save the setting: {exc}[/red]")
+            return
+        self._apply_output_dir()
+
+    def _apply_output_dir(self) -> None:
+        self.settings = load_settings()
+        self.query_one("#out-dir", Input).value = self.settings.output_dir
+        self.refresh_outputs()
+        self.say(f"[green]CSV output: {self.settings.output_dir}[/green]")
+
     def selected_account(self) -> str | None:
         table = self.query_one("#accounts-table", DataTable)
         if table.row_count == 0:
@@ -358,6 +470,8 @@ class ScraperApp(App):
         self._api = None
 
     def action_start(self) -> None:
+        if not self.terms_gate():
+            return
         if self.busy:
             self.say("[yellow]A job is already running.[/yellow]")
             return
@@ -598,5 +712,56 @@ class ScraperApp(App):
             self.set_accounts_busy(False)
 
 
-def main() -> None:
+HELP_TEXT = """\
+anonymized-tweet-scraper {version}
+
+Usage: anonymized-tweet-scraper [--version | --paths | --terms | --help]
+
+Without options, opens the full-screen app. Everything (scraping, accounts,
+settings) is done inside the app; there is no command-line scraping mode.
+
+Options:
+  --version   print the version and exit
+  --paths     print where settings, accounts and CSV files are stored, and exit
+  --terms     print the terms of use and exit
+  --help      show this help and exit
+"""
+
+
+def paths_text() -> str:
+    from .config import load_settings as _load
+
+    version, _ = terms.load_terms()
+    info = terms.accepted_info(APP_DIR)
+    if info and info[0] == version:
+        state = f"accepted v{version} on {info[1]}"
+    elif info:
+        state = f"v{info[0]} accepted earlier; v{version} not accepted yet"
+    else:
+        state = f"v{version} not accepted yet"
+    return (f"Mode:                {MODE}\n"
+            f"Settings & accounts: {APP_DIR}\n"
+            f"CSV output:          {_load().output_dir}\n"
+            f"Terms of use:        {state}\n")
+
+
+def main(argv: list[str] | None = None) -> int:
+    args = sys.argv[1:] if argv is None else argv
+    if args:
+        if args == ["--version"]:
+            print(f"anonymized-tweet-scraper {__version__}")
+            return 0
+        if args == ["--paths"]:
+            print(paths_text(), end="")
+            return 0
+        if args == ["--terms"]:
+            print(terms.load_terms()[1], end="")
+            return 0
+        if args in (["--help"], ["-h"]):
+            print(HELP_TEXT.format(version=__version__), end="")
+            return 0
+        print(HELP_TEXT.format(version=__version__), end="", file=sys.stderr)
+        return 2
+    ensure_app_dir()
     ScraperApp().run()
+    return 0

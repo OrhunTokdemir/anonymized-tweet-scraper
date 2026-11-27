@@ -18,16 +18,18 @@ Instructions for AI coding agents (Claude Code, Codex, Cursor, Copilot, etc.) wo
 
 ## Project layout
 
-- `scraper/tui.py` + `scraper/app.tcss`: the Textual terminal app (`python -m scraper`). There is no CLI-argument mode on purpose.
+- `scraper/tui.py` + `scraper/app.tcss`: the Textual terminal app (`python -m scraper`). There is no command-line scraping mode on purpose; the only flags are the informational `--version`, `--paths`, `--terms` and `--help`.
 - `scraper/twitter.py`: twscrape pool setup, account rotation, Twitter methods (search, user, replies, list, trend)
 - `scraper/eksi.py`: Ekşi Sözlük via the `eksiapi` mobile-API client
 - `scraper/offensive.py`: offensive-language batch (lexicon loading, Turkish normalization, query building, weak labels)
 - `lexicons/tr_offensive.txt`: seed lexicon. The format is documented at the top of the file
-- `scraper/envfile.py`: the only code allowed to write `.env` (used by the Accounts tab). Its tests must use temporary files, never the real `.env`
+- `scraper/envfile.py`: the only code allowed to write `.env` (used by the Accounts & settings tab). Its tests must use temporary files, never the real `.env`
+- `scraper/terms.py` + `TERMS_OF_USE.md`: first-run terms screen (English + Turkish). The version is the `<!-- terms-version: N -->` line; bump it whenever the terms change in substance so users accept again. Acceptance is stored in `APP_DIR/terms-accepted.txt`, never in `.env`
 - `scraper/anonymize.py`: redaction rules
 - `scraper/output.py`: CSV writer and file naming
 - `tests/`: run with `python -m unittest discover -s tests`
-- `build.sh` + `run_scraper.py` + `requirements-build.txt`: PyInstaller build. `tools/third_party_licenses.py` writes `dist/THIRD_PARTY_LICENSES.txt` from the runtime dependency tree. Never ship a build without it.
-- `scraper/paths.py`: `APP_DIR` (writable: .env, data/, accounts.db) vs `RESOURCE_DIR` (bundled read-only files). Use these instead of `__file__` so frozen builds work.
+- `build.py` (+ the `build.sh` wrapper) + `run_scraper.py` + `requirements-build.txt`: cross-platform PyInstaller build that also packages the standard and portable release archives. `tools/third_party_licenses.py` writes `dist/THIRD_PARTY_LICENSES.txt` from the runtime dependency tree. Never ship a build without it.
+- `.github/workflows/release.yml`: builds Linux (on `ubuntu-26.04`) and Windows binaries; publishes a GitHub Release on `v*.*.*` tags. `scraper/__init__.py` `__version__` must match the tag and `CITATION.cff`.
+- `scraper/paths.py`: three modes (source / portable / standard) decide `APP_DIR` (writable: .env, accounts.db) and the default CSV folder; `RESOURCE_DIR` holds bundled read-only files. Use these instead of `__file__` so frozen builds work.
 
 Core modules report progress through a `progress(str)` callback; never `print()` from them (it would corrupt the TUI).

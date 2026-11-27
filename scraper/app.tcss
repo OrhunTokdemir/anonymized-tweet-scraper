@@ -75,3 +75,22 @@ Screen {
 .hidden {
     display: none;
 }
+
+/* first-run terms of use */
+TermsScreen {
+    align: center middle;
+}
+
+#terms-box {
+    width: 90%;
+    max-width: 110;
+    height: 90%;
+    border: round $primary;
+    background: $surface;
+    padding: 0 1;
+}
+
+#terms-scroll {
+    height: 1fr;
+    margin-bottom: 1;
+}

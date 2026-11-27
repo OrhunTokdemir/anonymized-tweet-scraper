@@ -1,3 +1,4 @@
+import os
 import stat
 import sys
 import tempfile
@@ -12,6 +13,8 @@ from scraper.envfile import (  # noqa: E402
     ensure_env,
     list_usernames,
     remove_account,
+    set_setting,
+    unset_setting,
     upsert_account,
     validate,
 )
@@ -32,9 +35,18 @@ class EnvFileTests(unittest.TestCase):
     def text(self):
         return self.env.read_text(encoding="utf-8")
 
+    def assert_private(self, path: Path) -> None:
+        """POSIX: only the owner may read/write (0o600). Windows has no Unix
+        permission bits (it reports 0o666); there the file lives in the user's
+        own folder, so only check that our chmod didn't leave it read-only."""
+        if os.name == "posix":
+            self.assertEqual(stat.S_IMODE(path.stat().st_mode), 0o600)
+        else:
+            self.assertTrue(os.access(path, os.W_OK))
+
     def test_created_from_example_private(self):
         self.assertIn("TW_ROTATE_EVERY=40", self.text())
-        self.assertEqual(stat.S_IMODE(self.env.stat().st_mode), 0o600)
+        self.assert_private(self.env)
         self.assertEqual(list_usernames(self.env), [])  # placeholder doesn't count
 
     def test_fills_placeholder_slot(self):
@@ -54,7 +66,7 @@ class EnvFileTests(unittest.TestCase):
         self.assertIn("TW_ACCOUNT_3_USERNAME=carol", t)
         self.assertIn("TW_ACCOUNT_3_PROXY=http://h:1", t)
         self.assertEqual(list_usernames(self.env), ["alice", "bob", "carol"])
-        self.assertEqual(stat.S_IMODE(self.env.stat().st_mode), 0o600)
+        self.assert_private(self.env)  # still private after rewrites
 
     def test_update_existing_keeps_proxy(self):
         upsert_account(self.env, "alice", AUTH, CT0, proxy="http://p:1")
@@ -81,6 +93,48 @@ class EnvFileTests(unittest.TestCase):
         ensure_env(env, Path(self.tmp.name) / "missing.example")
         upsert_account(env, "alice", AUTH, CT0)
         self.assertTrue(env.read_text().startswith("TW_ACCOUNT_1_USERNAME=alice"))
+
+
+class SettingTests(unittest.TestCase):
+    """OUTPUT_DIR and friends, always on a temporary copy of .env.example."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.env = Path(self.tmp.name) / ".env"
+        ensure_env(self.env, ROOT / ".env.example")
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+    def text(self):
+        return self.env.read_text(encoding="utf-8")
+
+    def test_set_new_then_replace(self):
+        set_setting(self.env, "OUTPUT_DIR", "/tmp/one")
+        set_setting(self.env, "OUTPUT_DIR", "/tmp/two")
+        t = self.text()
+        self.assertEqual(t.count("\nOUTPUT_DIR="), 1)
+        self.assertIn("OUTPUT_DIR=/tmp/two", t)
+        self.assertIn("# OUTPUT_DIR=", t)  # the commented example line is left alone
+        self.assertIn("TW_ROTATE_EVERY=40", t)
+
+    def test_value_with_spaces_is_quoted(self):
+        set_setting(self.env, "OUTPUT_DIR", "/home/me/My Documents/out")
+        self.assertIn('OUTPUT_DIR="/home/me/My Documents/out"', self.text())
+
+    def test_unset(self):
+        set_setting(self.env, "OUTPUT_DIR", "/tmp/x")
+        self.assertTrue(unset_setting(self.env, "OUTPUT_DIR"))
+        self.assertNotIn("\nOUTPUT_DIR=", self.text())
+        self.assertFalse(unset_setting(self.env, "OUTPUT_DIR"))
+
+    def test_account_keys_and_bad_values_refused(self):
+        with self.assertRaises(ValueError):
+            set_setting(self.env, "TW_ACCOUNT_1_COOKIES", "x")
+        with self.assertRaises(ValueError):
+            set_setting(self.env, "output_dir", "x")
+        with self.assertRaises(ValueError):
+            set_setting(self.env, "OUTPUT_DIR", "a\nTW_ACCOUNT_9_USERNAME=evil")
 
 
 class ValidateTests(unittest.TestCase):

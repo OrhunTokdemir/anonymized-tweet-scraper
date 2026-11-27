@@ -12,7 +12,11 @@ First public release for research use.
 ### Added
 - Terminal app (`python -m scraper`) that collects posts from Twitter/X (via twscrape) and Ekşi Sözlük (via `eksiapi`) into one pseudonymized CSV.
 - Offensive-language batch: a Turkish dataset that mixes lexicon-matched candidates with control posts (weak labels), with the seed lexicon `lexicons/tr_offensive.txt`.
-- Accounts tab for adding, testing and removing Twitter accounts.
+- Accounts & settings tab for adding, testing and removing Twitter accounts, and for choosing the CSV output folder.
+- Ready-made programs for Linux (tested on Ubuntu 26.04.1) and Windows 10/11, each as a **standard** download (settings in the per-user folder, CSVs in `Documents/anonymized-posts`) and a **portable** download (everything in its own folder, CSVs in `data/`). Built and published by `.github/workflows/release.yml` with SHA-256 checksums.
+- Terms of use (`TERMS_OF_USE.md`, English and Turkish) that must be accepted on first start and again when they change. Acceptance is stored only locally.
+- Informational flags: `--version`, `--paths` (where settings, accounts and CSVs are stored), `--terms`, `--help`.
+- Cross-platform build script `build.py`, which also smoke-tests the program and packages both downloads (`build.sh` now calls it).
 - Rows stream to disk; stopped or crashed runs still save what they collected, and runs can append to an existing file.
 - Documentation: anonymization rules and their limits (`docs/anonymization.md`), the CSV schema (`docs/output-schema.md`), and the offensive-batch method and biases (`docs/offensive-batch.md`).
 - README sections: Ethics & Legal (X Terms of Service, EU DSA Art. 40, KVKK/GDPR, special-category data), a responsible-use checklist, known limitations, and how to cite.
@@ -25,7 +29,7 @@ First public release for research use.
 ### Fixed
 - Anonymization: X profile and status links were not redacted when the username started with "home" or "search" (e.g. `x.com/homer_s/status/…`).
 - Anonymization: dates, times, large numbers and search filters such as `since:2026-01-01` were wrongly replaced with `[phone]`. A phone number now needs at least 10 digits and may not start with a date. A leading `(` is now part of the match, so no stray bracket is left behind.
-- Accounts tab: **Test selected** reported ✅ for accounts that can log in but that X refuses to search for (e.g. suspended accounts). The test now also runs one search and shows X's reason.
+- Accounts & settings tab: **Test selected** reported ✅ for accounts that can log in but that X refuses to search for (e.g. suspended accounts). The test now also runs one search and shows X's reason.
 - A Twitter search that returns no tweets now logs a hint instead of silently writing an empty result.
 
 [Unreleased]: https://github.com/OrhunTokdemir/anonymized-tweet-scraper/compare/v1.0.0...HEAD

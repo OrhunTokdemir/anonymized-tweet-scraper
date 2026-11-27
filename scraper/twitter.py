@@ -97,7 +97,7 @@ async def build_api(settings: Settings, progress: Progress) -> API:
     if stale := existing - wanted:
         await api.pool.delete_accounts(list(stale))
     if not settings.accounts:
-        raise ScrapeError("No Twitter accounts yet. Add one in the Accounts tab.")
+        raise ScrapeError("No Twitter accounts yet. Add one in the Accounts & settings tab.")
 
     for acc in settings.accounts:
         if acc.username not in existing:
@@ -303,7 +303,7 @@ async def fetch_search(
         if not batch:
             if total == 0:
                 progress("[yellow]X returned no tweets for this search. If that is unexpected, press "
-                         "Test selected in the Accounts tab: X may be refusing search for your "
+                         "Test selected in the Accounts & settings tab: X may be refusing search for your "
                          "accounts.[/yellow]")
             break  # no more results
         max_id = min(seen) - 1

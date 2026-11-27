@@ -1,3 +1,5 @@
+import sys
+
 from .tui import main
 
-main()
+sys.exit(main())

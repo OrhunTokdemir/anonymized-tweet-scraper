@@ -1,7 +1,8 @@
-"""Add / update / remove Twitter accounts in .env (used by the app's Accounts tab).
+"""Edit .env: Twitter accounts and plain settings (used by the app's Accounts & settings tab).
 
-This is the only code that writes .env. It edits TW_ACCOUNT_<n>_* lines in
-place and leaves every other line (comments, other settings) untouched.
+This is the only code that writes .env. It edits TW_ACCOUNT_<n>_* lines (and
+single settings such as OUTPUT_DIR) in place and leaves every other line
+(comments, other settings) untouched.
 Standard library only.
 """
 
@@ -139,6 +140,48 @@ def upsert_account(path: Path, username: str, auth_token: str, ct0: str, proxy: 
             insert_at += 1
     _write(path, lines)
     return action
+
+
+_SETTING_KEY_RE = re.compile(r"^[A-Z][A-Z0-9_]*$")
+
+
+def _setting_index(lines: list[str], key: str) -> int | None:
+    pattern = re.compile(rf"^\s*{re.escape(key)}\s*=")
+    return next((i for i, line in enumerate(lines) if pattern.match(line)), None)
+
+
+def _check_setting_key(key: str) -> None:
+    if not _SETTING_KEY_RE.match(key) or key.startswith("TW_ACCOUNT_"):
+        raise ValueError(f"Not a plain setting name: {key!r}")
+
+
+def set_setting(path: Path, key: str, value: str) -> None:
+    """Set KEY=value (a plain setting such as OUTPUT_DIR, never an account key).
+    Replaces the existing line or appends one; everything else stays as it is."""
+    _check_setting_key(key)
+    if "\n" in value or "\r" in value:
+        raise ValueError("A setting value must be a single line.")
+    lines = _read(path)
+    quoted = f'"{value}"' if (" " in value or "#" in value) and '"' not in value else value
+    line = f"{key}={quoted}"
+    i = _setting_index(lines, key)
+    if i is None:
+        lines.append(line)
+    else:
+        lines[i] = line
+    _write(path, lines)
+
+
+def unset_setting(path: Path, key: str) -> bool:
+    """Remove KEY=... so the default applies again. -> whether a line was removed."""
+    _check_setting_key(key)
+    lines = _read(path)
+    i = _setting_index(lines, key)
+    if i is None:
+        return False
+    del lines[i]
+    _write(path, lines)
+    return True
 
 
 def remove_account(path: Path, username: str) -> bool:

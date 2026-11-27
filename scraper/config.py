@@ -8,7 +8,7 @@ from pathlib import Path
 
 from dotenv import dotenv_values, load_dotenv
 
-from .paths import APP_DIR, RESOURCE_DIR, project_path
+from .paths import APP_DIR, RESOURCE_DIR, output_dir, project_path
 
 PROJECT_ROOT = APP_DIR  # where .env lives (tests point this at a temp folder)
 
@@ -55,7 +55,7 @@ def load_settings() -> Settings:
     path = env_path()
     load_dotenv(path)
     # Accounts are read straight from the file (not os.environ) so that changes
-    # made in the app's Accounts tab take effect on reload.
+    # made in the app's Accounts & settings tab take effect on reload.
     source = {k: v or "" for k, v in dotenv_values(path).items()} if path.exists() else dict(os.environ)
 
     def acc(key: str) -> str:
@@ -88,5 +88,7 @@ def load_settings() -> Settings:
         delay_min=delay_min,
         delay_max=max(delay_min, float(_env("TW_DELAY_MAX", "8"))),
         eksi_max_per_topic=max(1, int(_env("EKSI_MAX_PER_TOPIC", "10"))),
-        output_dir=str(project_path(_env("OUTPUT_DIR", "data"))),
+        # read from the file itself when it exists, so "Use default" (which
+        # removes the line) takes effect without restarting the app
+        output_dir=str(output_dir(acc("OUTPUT_DIR") if path.exists() else _env("OUTPUT_DIR"))),
     )

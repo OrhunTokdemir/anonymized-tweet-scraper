@@ -1,0 +1,140 @@
+# Builds the Linux and Windows programs and publishes a GitHub Release.
+#   - push a tag like v1.0.0  -> build, then publish the release with checksums
+#   - Actions -> Release -> "Run workflow" -> dry run: build only, archives are
+#     attached to the run as artifacts (no release is created)
+name: Release
+
+on:
+  push:
+    tags: ["v*.*.*"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Build (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: true
+      matrix:
+        os: [ubuntu-26.04, windows-latest]
+    steps:
+      - uses: actions/checkout@v4
+
+      # Linux: the distribution's own Python 3.14 (same as Ubuntu 26.04.1 desktops)
+      - name: Install Python (Ubuntu)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y python3-venv binutils
+          python3 -m venv .venv
+          echo "PY=$GITHUB_WORKSPACE/.venv/bin/python" >> "$GITHUB_ENV"
+
+      - name: Install Python (Windows)
+        if: runner.os == 'Windows'
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.14"
+
+      - name: Create venv (Windows)
+        if: runner.os == 'Windows'
+        shell: bash
+        run: |
+          python -m venv .venv
+          echo "PY=$GITHUB_WORKSPACE/.venv/Scripts/python.exe" >> "$GITHUB_ENV"
+
+      - name: Tag must match the version in the code
+        if: startsWith(github.ref, 'refs/tags/')
+        shell: bash
+        run: |
+          code_version=$(sed -n 's/^__version__ = "\([^"]*\)".*/\1/p' scraper/__init__.py)
+          if [ "v$code_version" != "$GITHUB_REF_NAME" ]; then
+            echo "::error::tag $GITHUB_REF_NAME does not match __version__ $code_version"
+            exit 1
+          fi
+
+      - name: Install dependencies
+        shell: bash
+        run: |
+          "$PY" -m pip install --upgrade pip
+          "$PY" -m pip install -r requirements.txt -r requirements-build.txt
+
+      - name: Unit tests
+        shell: bash
+        run: '"$PY" -m unittest discover -s tests'
+
+      - name: Build, smoke-test and package
+        shell: bash
+        run: '"$PY" build.py --no-deps'
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: release-${{ runner.os }}
+          path: dist/release/*
+          if-no-files-found: error
+
+  publish:
+    name: Publish release
+    needs: build
+    if: startsWith(github.ref, 'refs/tags/')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          path: release
+          pattern: release-*
+          merge-multiple: true
+
+      - name: Checksums
+        working-directory: release
+        run: |
+          sha256sum * > SHA256SUMS.txt
+          cat SHA256SUMS.txt
+
+      - name: Release notes from CHANGELOG.md
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          # the "## [x.y.z]" section, up to the next "## [" heading
+          awk -v v="$version" '
+            index($0, "## [" v "]") == 1 { on = 1; next }
+            on && /^## \[/ { exit }
+            on { print }
+          ' CHANGELOG.md > notes.md
+          if [ ! -s notes.md ]; then
+            echo "::error::CHANGELOG.md has no section for [$version]"
+            exit 1
+          fi
+          cat >> notes.md <<'EOF'
+
+          ## Downloads
+
+          | File | For |
+          |---|---|
+          | `…-linux-x86_64.tar.gz` | Linux, **standard**: settings in `~/.local/share/anonymized-tweet-scraper`, CSVs in your Documents folder (`anonymized-posts`) |
+          | `…-linux-x86_64-portable.tar.gz` | Linux, **portable**: everything stays in the unpacked folder, CSVs in `data/` |
+          | `…-windows-x86_64.zip` | Windows 10/11, **standard**: settings in `%APPDATA%\anonymized-tweet-scraper`, CSVs in Documents (`anonymized-posts`) |
+          | `…-windows-x86_64-portable.zip` | Windows 10/11, **portable**: everything stays in the unpacked folder |
+
+          Verify a download: `sha256sum -c SHA256SUMS.txt --ignore-missing` (Linux) or `Get-FileHash <file>` (PowerShell) and compare with `SHA256SUMS.txt`.
+
+          **Notes**
+          - Linux build tested on Ubuntu 26.04.1 LTS; other distributions may work but are not tested.
+          - The Windows program is not code-signed, so SmartScreen may warn on first start ("More info" → "Run anyway"). Run it in Windows Terminal.
+          - No macOS build.
+          - On first start you must accept the terms of use (`TERMS_OF_USE.md`). Read the README's Ethics & Legal section before collecting data.
+          EOF
+
+      - uses: softprops/action-gh-release@v2
+        with:
+          name: ${{ github.ref_name }}
+          body_path: notes.md
+          files: |
+            release/*.tar.gz
+            release/*.zip
+            release/SHA256SUMS.txt

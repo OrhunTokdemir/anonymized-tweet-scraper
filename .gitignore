@@ -225,6 +225,8 @@ __marimo__/
 # scraped output (may contain personal data even after anonymization)
 *.csv
 data/
+# local record that the terms of use were accepted (source mode)
+terms-accepted.txt
 # twscrape account pool: stores session cookies -> secret
 accounts.db
 *.db
