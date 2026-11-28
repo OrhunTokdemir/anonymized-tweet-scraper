@@ -21,15 +21,15 @@ class TerminalCommandTests(unittest.TestCase):
     PROG = ["/opt/app/anonymized-tweet-scraper"]
 
     def test_prefers_terminal_env(self):
-        cmd = tui._terminal_command(which_only("foot", "xterm"), {"TERMINAL": "foot"}, self.PROG)
+        cmd = tui._terminal_command(which_only("foot", "xterm"), {"TERMINAL": "foot"}, self.PROG, "linux")
         self.assertEqual(cmd, ["foot", "-e", *self.PROG])
 
     def test_ignores_missing_terminal_env(self):
-        cmd = tui._terminal_command(which_only("xterm"), {"TERMINAL": "nope"}, self.PROG)
+        cmd = tui._terminal_command(which_only("xterm"), {"TERMINAL": "nope"}, self.PROG, "linux")
         self.assertEqual(cmd, ["/usr/bin/xterm", "-e", *self.PROG])
 
     def test_list_order_and_args(self):
-        cmd = tui._terminal_command(which_only("gnome-terminal", "xterm"), {}, self.PROG)
+        cmd = tui._terminal_command(which_only("gnome-terminal", "xterm"), {}, self.PROG, "linux")
         self.assertEqual(cmd, ["/usr/bin/gnome-terminal", "--", *self.PROG])
 
     def test_none_found(self):
