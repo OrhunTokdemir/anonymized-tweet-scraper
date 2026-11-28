@@ -333,20 +333,6 @@ If you use this software in research or publications, please cite it. DOI: [`10.
 
 > Tokdemir, D. O. (2026). *anonymized-tweet-scraper* (Version 1.1.0) [Computer software]. Zenodo. https://doi.org/10.5281/zenodo.24612729
 
-**BibTeX**
-
-```bibtex
-@software{tokdemir_anonymized_tweet_scraper,
-  author  = {Tokdemir, Doğan Orhun},
-  title   = {anonymized-tweet-scraper},
-  version = {1.1.0},
-  doi     = {10.5281/zenodo.24612729},
-  year    = {2026},
-  url     = {https://github.com/OrhunTokdemir/anonymized-tweet-scraper},
-  license = {MIT}
-}
-```
-
 The DOI [`10.5281/zenodo.24612729`](https://doi.org/10.5281/zenodo.24612729) always points to the newest version. To cite exactly the version you used, take its own DOI from the [Zenodo page](https://doi.org/10.5281/zenodo.24612729) (v1.0.0: `10.5281/zenodo.24612730`).
 
 In your methods section, also report the **version** you used and, for the offensive-language batch, the **lexicon** you used (the git commit of `lexicons/tr_offensive.txt`, or your own lexicon). The results depend on both.
