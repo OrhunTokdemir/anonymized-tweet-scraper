@@ -95,12 +95,13 @@ class CliTests(unittest.TestCase):
         code, out, _ = self.run_main("--paths")
         self.assertEqual(code, 0)
         self.assertEqual([line.split(":")[0] for line in out.splitlines()],
-                         ["Mode", "Settings & accounts", "CSV output", "Terms of use"])
+                         ["Mode", "Settings & accounts", "CSV output", "Responsible use"])
 
-    def test_terms_flag(self):
-        code, out, _ = self.run_main("--terms")
-        self.assertEqual(code, 0)
-        self.assertIn("## Türkçe", out)
+    def test_guidelines_flag(self):
+        for flag in ("--guidelines", "--terms"):  # --terms is the old name
+            code, out, _ = self.run_main(flag)
+            self.assertEqual(code, 0)
+            self.assertIn("## Türkçe", out)
 
     def test_unknown_flag(self):
         code, out, err = self.run_main("--scrape-everything")

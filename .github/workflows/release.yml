@@ -127,7 +127,7 @@ jobs:
           - Linux build tested on Ubuntu 26.04.1 LTS; other distributions may work but are not tested.
           - The Windows program is not code-signed, so SmartScreen may warn on first start ("More info" → "Run anyway"). Run it in Windows Terminal.
           - No macOS build.
-          - On first start you must accept the terms of use (`TERMS_OF_USE.md`). Read the README's Ethics & Legal section before collecting data.
+          - On first start the app shows the responsible-use guidelines (`RESPONSIBLE_USE.md`). They are guidance only; the MIT License is the only license. Read the README's Ethics & Legal section before collecting data.
           EOF
 
       - uses: softprops/action-gh-release@v2

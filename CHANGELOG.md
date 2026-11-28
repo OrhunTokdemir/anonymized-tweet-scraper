@@ -5,6 +5,19 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+## [1.1.0] - 2026-11-28
+
+### Changed
+- Replaced `TERMS_OF_USE.md` with non-binding responsible-use guidelines (`RESPONSIBLE_USE.md`, English and Turkish). The MIT License is the only license; the non-commercial and "accept to use" conditions were removed.
+- The first-start screen is now an informational notice that you close with "I have read the responsible-use guidelines" instead of a terms-acceptance gate. It is recorded locally in `guidelines-read.txt` and shown again when the guidelines change.
+- New `--guidelines` flag prints the guidelines (`--terms` still works as an alias). `--paths` shows "Responsible use" instead of "Terms of use".
+- Clarified rate-limit and multi-account wording in the README, `.env.example` and the Accounts & settings tab: the scraper respects X's rate limits and is not designed to evade blocks or suspensions.
+
+### Added
+- DOI shown in the README's citation section (it was already in `CITATION.cff` and the badge).
+- AI-assistance disclosure in the README.
+- README states near the top that the output is pseudonymized, not fully anonymous.
+
 ## [1.0.0] - 2026-11-28
 
 First public release for research use.
@@ -32,5 +45,6 @@ First public release for research use.
 - Accounts & settings tab: **Test selected** reported ✅ for accounts that can log in but that X refuses to search for (e.g. suspended accounts). The test now also runs one search and shows X's reason.
 - A Twitter search that returns no tweets now logs a hint instead of silently writing an empty result.
 
-[Unreleased]: https://github.com/OrhunTokdemir/anonymized-tweet-scraper/compare/v1.0.0...HEAD
+[Unreleased]: https://github.com/OrhunTokdemir/anonymized-tweet-scraper/compare/v1.1.0...HEAD
+[1.1.0]: https://github.com/OrhunTokdemir/anonymized-tweet-scraper/compare/v1.0.0...v1.1.0
 [1.0.0]: https://github.com/OrhunTokdemir/anonymized-tweet-scraper/releases/tag/v1.0.0

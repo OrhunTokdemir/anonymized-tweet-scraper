@@ -55,7 +55,7 @@ class EnvFileTests(unittest.TestCase):
         self.assertIn("TW_ACCOUNT_1_USERNAME=alice", t)
         self.assertIn(f'TW_ACCOUNT_1_COOKIES="auth_token={AUTH}; ct0={CT0}"', t)
         self.assertNotIn("your_twitter_username", t)
-        self.assertIn("# Rotation / pacing", t)  # other content preserved
+        self.assertIn("# Pacing / rate limits", t)  # other content preserved
 
     def test_second_goes_to_empty_slot_then_append(self):
         upsert_account(self.env, "alice", AUTH, CT0)

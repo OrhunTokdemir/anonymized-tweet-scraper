@@ -6,7 +6,7 @@ Usage (from the project folder, with the virtualenv's Python):
 
 Produces in dist/:
     anonymized-tweet-scraper[.exe]   the program (PyInstaller --onefile)
-    LICENSE, THIRD_PARTY_LICENSES.txt, TERMS_OF_USE.md
+    LICENSE, THIRD_PARTY_LICENSES.txt, RESPONSIBLE_USE.md
     release/anonymized-tweet-scraper-v<version>-<os>-<arch>.{tar.gz|zip}
     release/anonymized-tweet-scraper-v<version>-<os>-<arch>-portable.{tar.gz|zip}
 
@@ -44,7 +44,7 @@ https://github.com/OrhunTokdemir/anonymized-tweet-scraper
 
 Start
   {start}
-  On first start you are asked to accept the terms of use (TERMS_OF_USE.md).
+  On first start the app shows the responsible-use guidelines (RESPONSIBLE_USE.md).
 
 Where files are stored
 {where}
@@ -58,7 +58,7 @@ Files in this folder
   {exe}   the program (no Python needed)
   LICENSE                     this project's license (MIT)
   THIRD_PARTY_LICENSES.txt    licenses of everything bundled inside the program
-  TERMS_OF_USE.md             the terms you accept on first start
+  RESPONSIBLE_USE.md          responsible-use guidelines (guidance; MIT is the license)
 {marker_line}"""
 
 
@@ -90,7 +90,7 @@ def pyinstaller() -> Path:
         (ROOT / "scraper" / "app.tcss", "scraper"),
         (ROOT / "lexicons", "lexicons"),
         (ROOT / ".env.example", "."),
-        (ROOT / "TERMS_OF_USE.md", "."),
+        (ROOT / "RESPONSIBLE_USE.md", "."),
     ]
     args = [sys.executable, "-m", "PyInstaller", "--noconfirm", "--clean", "--onefile",
             "--name", NAME, "--distpath", str(DIST), "--workpath", str(ROOT / "build"),
@@ -111,7 +111,7 @@ def license_files() -> None:
     run(sys.executable, str(ROOT / "tools" / "third_party_licenses.py"),
         str(ROOT / "requirements.txt"), str(DIST / "THIRD_PARTY_LICENSES.txt"))
     shutil.copyfile(ROOT / "LICENSE", DIST / "LICENSE")
-    shutil.copyfile(ROOT / "TERMS_OF_USE.md", DIST / "TERMS_OF_USE.md")
+    shutil.copyfile(ROOT / "RESPONSIBLE_USE.md", DIST / "RESPONSIBLE_USE.md")
 
 
 def _paths_info(exe: Path, env: dict) -> dict[str, str]:
@@ -141,7 +141,7 @@ def _inside(path: str, folder: Path) -> bool:
 
 
 def smoke_test(exe: Path, ver: str) -> None:
-    """--version and --paths in a throwaway HOME/APPDATA, in both modes."""
+    """--version and --paths in a temporary HOME/APPDATA, in both modes."""
     with tempfile.TemporaryDirectory() as tmp:
         home = Path(tmp)
         env = dict(os.environ, HOME=tmp, USERPROFILE=tmp, APPDATA=str(home / "AppData"),
@@ -213,7 +213,7 @@ def package(exe: Path, ver: str) -> list[Path]:
             folder = Path(tmp, NAME)
             folder.mkdir()
             shutil.copy2(exe, folder / exe.name)
-            for f in ("LICENSE", "THIRD_PARTY_LICENSES.txt", "TERMS_OF_USE.md"):
+            for f in ("LICENSE", "THIRD_PARTY_LICENSES.txt", "RESPONSIBLE_USE.md"):
                 shutil.copyfile(DIST / f, folder / f)
             (folder / "README.txt").write_text(readme_text(ver, portable), encoding="utf-8",
                                                 newline="\r\n" if IS_WINDOWS else "\n")

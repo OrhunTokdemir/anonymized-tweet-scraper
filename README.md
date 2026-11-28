@@ -4,10 +4,13 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.24612729.svg)](https://doi.org/10.5281/zenodo.24612729)
 
-A terminal app that pulls posts from **Twitter/X** (via [twscrape](https://github.com/vladkens/twscrape)) and **Ekşi Sözlük** (via Ekşi's own mobile API, using the [`eksiapi`](https://github.com/agmmnn/eksiapi) client). It anonymizes them and writes everything into one CSV file.
+A terminal app that pulls posts from both **Twitter/X** (via [twscrape](https://github.com/vladkens/twscrape)) and **Ekşi Sözlük** (via Ekşi's own mobile API, using the [`eksiapi`](https://github.com/agmmnn/eksiapi) client). It pseudonymizes them and writes everything into one CSV file.
+
+> [!NOTE]
+> Despite the repository name, the output is **pseudonymized, not fully anonymous**. Usernames, mentions, profile links, e-mails and phone numbers are removed, but the exact text and its timestamp can often be traced back to the author. See [Anonymization](#anonymization).
 
 - **Two sources, one CSV**: Twitter/X and Ekşi Sözlük posts side by side, with the same columns.
-- **Anonymized by default**: mentions, usernames, profile links, e-mails and phone numbers are redacted before anything is written.
+- **Pseudonymized by default**: mentions, usernames, profile links, e-mails and phone numbers are redacted before anything is written.
 - **Full-screen terminal UI**: no command-line flags to remember. Works with mouse and keyboard.
 - **Offensive-language batch**: builds a Turkish ML dataset that mixes lexicon-matched candidates with control posts.
 - **Polite pacing**: built-in delays between requests, and the run pauses on its own when X's rate limits are reached.
@@ -18,7 +21,7 @@ A terminal app that pulls posts from **Twitter/X** (via [twscrape](https://githu
 ## Disclaimer
 
 > [!WARNING]
-> This project is intended **for academic and research purposes only**.
+> This project was designed **for academic research**. The [responsible-use guidelines](RESPONSIBLE_USE.md) explain how to use it carefully.
 >
 > - Scraping Twitter/X or Ekşi Sözlük may **not comply with the platforms' Terms of Service**. You are responsible for how you use this software. Read [Ethics & Legal](#ethics--legal) before collecting any data.
 > - Do **not** use it for harassment, surveillance or profiling of individuals, spam, or anything else that violates the law or the rights of others.
@@ -42,7 +45,7 @@ A terminal app that pulls posts from **Twitter/X** (via [twscrape](https://githu
 
 **Ethics approval.** Get approval from your ethics committee (IRB/REC) **before** you collect data, not after.
 
-**Terms of use.** On first start the app shows its [terms of use](TERMS_OF_USE.md) (English and Turkish) and only continues after you accept them. Acceptance is stored only on your computer and you are asked again when the terms change. `--terms` prints them.
+**Responsible use.** On first start the app shows its [responsible-use guidelines](RESPONSIBLE_USE.md) (English and Turkish). They are guidance only: the [MIT License](LICENSE) alone governs use of this software. You close the notice with "I have read the responsible-use guidelines". This is recorded only on your computer, and the notice comes back when the guidelines change. `--guidelines` prints them.
 
 ## Responsible use checklist
 
@@ -76,7 +79,7 @@ You can change the CSV folder in the app: **Accounts & settings → Output folde
 sha256sum -c SHA256SUMS.txt --ignore-missing      # Linux
 ```
 ```powershell
-Get-FileHash .\anonymized-tweet-scraper-v1.0.0-windows-x86_64.zip   # Windows: compare with SHA256SUMS.txt
+Get-FileHash .\anonymized-tweet-scraper-v1.1.0-windows-x86_64.zip   # Windows: compare with SHA256SUMS.txt
 ```
 
 **Run it**
@@ -88,7 +91,7 @@ Get-FileHash .\anonymized-tweet-scraper-v1.0.0-windows-x86_64.zip   # Windows: c
 
 ## Quick start (from source)
 
-Ekşi Sözlük works right away with no setup. Twitter/X needs at least one dedicated account (see [Twitter accounts](#twitter-accounts)). Where you can, use the official X API instead (see [Ethics & Legal](#ethics--legal)).
+Ekşi Sözlük works right away with no setup. Twitter/X needs at least one account (see [Twitter accounts](#twitter-accounts)). Where you can, use the official X API instead (see [Ethics & Legal](#ethics--legal)).
 
 Requires **Python 3.11 or newer** (tested on 3.11–3.14, on Linux and Windows). Commands are shown for Ubuntu/Debian. On other systems, create a Python virtual environment the usual way.
 
@@ -104,7 +107,7 @@ Later runs only need `source .venv/bin/activate` and `python -m scraper`. If you
 
 ## Twitter accounts
 
-Use a dedicated account, never your personal one.
+Use only accounts you are entitled to use, and keep your personal account out of it.
 
 ### Adding an account
 
@@ -124,7 +127,7 @@ The app is built to stay under X's rate limits, not to get around them.
 - **Waiting when X says to wait.** When X reports a rate limit, the log shows a yellow `X rate limit: all accounts are busy (next free at HH:MM UTC)` line. The run waits until the limit resets and then continues by itself; it hasn't frozen.
 - **Ekşi Sözlük** requests have a random 0.5–1.5 s pause each.
 - **Be modest.** Keep counts to what your study needs, and keep the default delays or raise them.
-- **Accounts.** If you configure more than one account in `.env`, search chunks take turns (least-recently-used first). Every 10 chunks the log shows `Accounts: N active · requests a=… b=…`.
+- **More than one account.** The scraper can use more than one account. It respects X's rate limits: an account that hits a limit is not used again until that limit resets, and when every account is limited the run waits. It is not designed to evade blocks or suspensions. Use only accounts you are entitled to use. With several accounts in `.env`, search chunks take turns (least-recently-used first), and every 10 chunks the log shows `Accounts: N active · requests a=… b=…`.
 - **Deactivated accounts.** If X logs out or deactivates an account, the log says `Account @x was deactivated: <reason>`. If **no** active account is left, the run stops and saves what it collected as `_incomplete.csv`.
 
 ## Usage
@@ -272,7 +275,7 @@ Settings live in `.env`, in the settings folder (`--paths` shows where: the proj
 | Setting | Default | What it does |
 | --- | --- | --- |
 | `TW_ACCOUNT_<n>_USERNAME`, `_COOKIES`, `_PROXY`, … | | One block per Twitter account, numbered 1, 2, 3, … with no gaps. `_PROXY` is optional: an HTTP proxy for that account, e.g. if your network requires one |
-| `TW_ROTATE_EVERY` | `40` | Tweets fetched per chunk before switching account |
+| `TW_ROTATE_EVERY` | `40` | Tweets fetched per search chunk (with several accounts, the next chunk goes to the least-recently-used one) |
 | `TW_DELAY_MIN` / `TW_DELAY_MAX` | `3` / `8` | Random pause between chunks, in seconds |
 | `EKSI_MAX_PER_TOPIC` | `10` | Max entries taken from any one Ekşi topic |
 | `OFFENSIVE_LEXICON` | `lexicons/tr_offensive.txt` | Default lexicon for the offensive batch |
@@ -288,7 +291,7 @@ Settings live in `.env`, in the settings folder (`--paths` shows where: the proj
 .venv\Scripts\python build.py   # Windows
 ```
 
-This needs the `.venv` from [Quick start](#quick-start-from-source). It installs PyInstaller into `.venv`, builds one executable, checks it (`--version` and `--paths` in standard and portable mode, in a throwaway home folder), and writes:
+This needs the `.venv` from [Quick start](#quick-start-from-source). It installs PyInstaller into `.venv`, builds one executable, checks it (`--version` and `--paths` in standard and portable mode, in a temporary home folder), and writes:
 
 | File | What it is |
 | --- | --- |
@@ -296,7 +299,7 @@ This needs the `.venv` from [Quick start](#quick-start-from-source). It installs
 | `dist/release/…-<os>-x86_64.{tar.gz,zip}` | the **standard** download |
 | `dist/release/…-<os>-x86_64-portable.{tar.gz,zip}` | the **portable** download (contains the `portable` marker file) |
 
-Each archive contains the program, `LICENSE`, `THIRD_PARTY_LICENSES.txt`, `TERMS_OF_USE.md` and a short `README.txt`. **Always ship the whole archive.** The bundled libraries' licenses (MIT, BSD, Apache-2.0) require their notices to travel with any copy of their code; `build.py` regenerates `THIRD_PARTY_LICENSES.txt` on every build (via `tools/third_party_licenses.py`). PyInstaller can't cross-compile: build the Linux program on Linux and the Windows program on Windows.
+Each archive contains the program, `LICENSE`, `THIRD_PARTY_LICENSES.txt`, `RESPONSIBLE_USE.md` and a short `README.txt`. **Always ship the whole archive.** The bundled libraries' licenses (MIT, BSD, Apache-2.0) require their notices to travel with any copy of their code; `build.py` regenerates `THIRD_PARTY_LICENSES.txt` on every build (via `tools/third_party_licenses.py`). PyInstaller can't cross-compile: build the Linux program on Linux and the Windows program on Windows.
 
 Releases are built by [`.github/workflows/release.yml`](.github/workflows/release.yml) when a `v*.*.*` tag is pushed (the tag must match `__version__` in `scraper/__init__.py`). Running the workflow by hand builds the archives without publishing a release.
 
@@ -320,15 +323,15 @@ python -m unittest discover -s tests
 
 ### AI assistance
 
-This project was built with the help of AI coding assistants. The author designed the architecture, chose the technologies, and reviewed and tested the code.
+This project was developed with AI coding assistance. All code was reviewed and tested by the author.
 
 ## How to cite
 
-If you use this software in research or publications, please cite it. The metadata is in [`CITATION.cff`](CITATION.cff). On GitHub, the **"Cite this repository"** button in the sidebar generates APA and BibTeX entries from it.
+If you use this software in research or publications, please cite it. DOI: [`10.5281/zenodo.24612729`](https://doi.org/10.5281/zenodo.24612729). The metadata is in [`CITATION.cff`](CITATION.cff). On GitHub, the **"Cite this repository"** button in the sidebar generates APA and BibTeX entries from it.
 
 **APA**
 
-> Tokdemir, D. O. (2026). *anonymized-tweet-scraper* (Version 1.0.0) [Computer software]. Zenodo. https://doi.org/10.5281/zenodo.24612729
+> Tokdemir, D. O. (2026). *anonymized-tweet-scraper* (Version 1.1.0) [Computer software]. Zenodo. https://doi.org/10.5281/zenodo.24612729
 
 **BibTeX**
 
@@ -336,7 +339,7 @@ If you use this software in research or publications, please cite it. The metada
 @software{tokdemir_anonymized_tweet_scraper,
   author  = {Tokdemir, Doğan Orhun},
   title   = {anonymized-tweet-scraper},
-  version = {1.0.0},
+  version = {1.1.0},
   doi     = {10.5281/zenodo.24612729},
   year    = {2026},
   url     = {https://github.com/OrhunTokdemir/anonymized-tweet-scraper},
@@ -350,4 +353,4 @@ In your methods section, also report the **version** you used and, for the offen
 
 ## License
 
-Released under the [MIT License](LICENSE).
+Released under the [MIT License](LICENSE). The [responsible-use guidelines](RESPONSIBLE_USE.md) are recommendations and add no conditions to it.

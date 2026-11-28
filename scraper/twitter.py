@@ -134,7 +134,7 @@ async def account_rows(api: API) -> list[tuple[str, str, int, str]]:
 
 
 async def check_account(settings: Settings, username: str, timeout: float = 60) -> tuple[bool, str]:
-    """Really try the account: a throwaway pool with only this account looks up @X.
+    """Really try the account: a temporary pool with only this account looks up @X.
 
     The real accounts.db and the other accounts are not touched.
     """

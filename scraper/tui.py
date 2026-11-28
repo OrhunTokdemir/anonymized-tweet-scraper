@@ -34,7 +34,7 @@ from textual.widgets import (
     TabPane,
 )
 
-from . import __version__, envfile, terms
+from . import __version__, envfile, guidelines
 from .config import Settings, env_example_path, env_path, load_settings
 from .paths import APP_DIR, MODE, ensure_app_dir
 from .eksi import EKSI_METHODS, EKSI_ORDERS
@@ -44,7 +44,8 @@ from .output import CsvStream, list_outputs
 from .twitter import TW_METHODS, ScrapeError
 
 ACCOUNTS_HELP = (
-    "[b]Add a Twitter account[/b] (use a dedicated account, never your personal one):\n"
+    "[b]Add a Twitter account[/b] (use only accounts you are entitled to use; "
+    "the app respects X's rate limits and does not evade blocks or suspensions):\n"
     "1. Log in at x.com in your browser.  2. Press F12 → [b]Application[/b] (Chrome) or [b]Storage[/b] (Firefox) "
     "→ Cookies → https://x.com.  3. Copy the [b]Value[/b] of [i]auth_token[/i] and [i]ct0[/i] into the fields below.\n"
     "[dim]Tarayıcıda x.com'a gir → F12 → Application/Storage → Cookies → https://x.com → "
@@ -87,38 +88,28 @@ def int_value(app: App, selector: str) -> int:
     return int(raw) if raw.lstrip("-").isdigit() else 0
 
 
-class TermsScreen(ModalScreen[bool]):
-    """First-run terms of use. Dismisses with True (accepted) or False (quit)."""
+class GuidelinesScreen(ModalScreen[None]):
+    """First-run responsible-use notice. Informational only; dismissing it records that it was read."""
 
-    BINDINGS = [("escape", "quit_terms", "Quit")]
+    BINDINGS = [("escape", "dismiss_notice", "Close")]
 
     def __init__(self, version: int, text: str) -> None:
-        super().__init__(id="terms-screen")
+        super().__init__(id="guidelines-screen")
         self.version = version
         self.text = text
 
     def compose(self) -> ComposeResult:
-        with Vertical(id="terms-box"):
-            yield Label(f"Terms of use / Kullanım koşulları (v{self.version})", classes="group-title")
-            with VerticalScroll(id="terms-scroll"):
+        with Vertical(id="guidelines-box"):
+            yield Label(f"Responsible use / Sorumlu kullanım (v{self.version})", classes="group-title")
+            with VerticalScroll(id="guidelines-scroll"):
                 yield Markdown(self.text)
-            yield Checkbox("I have read and accept these terms / Okudum ve kabul ediyorum", id="terms-check")
             with Horizontal(classes="actions"):
-                yield Button("Quit / Çık", variant="error", id="terms-quit")
-                yield Button("Accept / Kabul et", variant="primary", id="terms-accept", disabled=True)
+                yield Button("I have read the responsible-use guidelines / Sorumlu kullanım yönergelerini okudum",
+                             variant="primary", id="guidelines-ok")
 
-    @on(Checkbox.Changed, "#terms-check")
-    def check_changed(self, event: Checkbox.Changed) -> None:
-        self.query_one("#terms-accept", Button).disabled = not event.value
-
-    @on(Button.Pressed, "#terms-accept")
-    def accept(self) -> None:
-        if self.query_one("#terms-check", Checkbox).value:
-            self.dismiss(True)
-
-    @on(Button.Pressed, "#terms-quit")
-    def action_quit_terms(self) -> None:
-        self.dismiss(False)
+    @on(Button.Pressed, "#guidelines-ok")
+    def action_dismiss_notice(self) -> None:
+        self.dismiss(None)
 
 
 class ScraperApp(App):
@@ -137,8 +128,8 @@ class ScraperApp(App):
         self._api = None
         self._api_lock = asyncio.Lock()
         self.busy = False
-        self.terms_version, self.terms_text = terms.load_terms()
-        self.terms_ok = terms.is_accepted(APP_DIR, self.terms_version)
+        self.guidelines_version, self.guidelines_text = guidelines.load_guidelines()
+        self.guidelines_read = guidelines.is_read(APP_DIR, self.guidelines_version)
 
     # ------------------------------------------------------------------ layout
     def compose(self) -> ComposeResult:
@@ -206,7 +197,7 @@ class ScraperApp(App):
                             yield Button("Save", variant="primary", id="out-dir-save")
                     yield Static(ACCOUNTS_HELP, classes="help")
                     with Vertical(classes="group"):
-                        yield row("Username", Input(placeholder="your_dedicated_account", id="acc-username"))
+                        yield row("Username", Input(placeholder="your_twitter_username", id="acc-username"))
                         yield row("auth_token", Input(placeholder="paste auth_token value", password=True,
                                                       id="acc-auth-token"))
                         yield row("ct0", Input(placeholder="paste ct0 value", password=True, id="acc-ct0"))
@@ -252,25 +243,23 @@ class ScraperApp(App):
         if not self.settings.accounts:
             self.say("[yellow]No Twitter accounts yet: only Ekşi works. "
                      "Add one in the Accounts & settings tab.[/yellow]")
-        if not self.terms_ok:
-            self.push_screen(TermsScreen(self.terms_version, self.terms_text), self._terms_done)
+        if not self.guidelines_read:
+            self.push_screen(GuidelinesScreen(self.guidelines_version, self.guidelines_text),
+                             self._guidelines_done)
 
-    def _terms_done(self, accepted: bool | None) -> None:
-        if not accepted:
-            self.exit()
-            return
+    def _guidelines_done(self, _result: None = None) -> None:
         try:
-            terms.record_acceptance(APP_DIR, self.terms_version)
-        except OSError as exc:  # still let them use the app this session
-            self.say(f"[yellow]Could not save the terms acceptance: {exc}[/yellow]")
-        self.terms_ok = True
-        self.say(f"[green]Terms of use v{self.terms_version} accepted.[/green]")
+            guidelines.record_read(APP_DIR, self.guidelines_version)
+        except OSError as exc:  # only means the notice shows again next start
+            self.say(f"[yellow]Could not save that the notice was read: {exc}[/yellow]")
+        self.guidelines_read = True
 
-    def terms_gate(self) -> bool:
-        """Runs may only start after the terms were accepted."""
-        if not self.terms_ok and not isinstance(self.screen, TermsScreen):
-            self.push_screen(TermsScreen(self.terms_version, self.terms_text), self._terms_done)
-        return self.terms_ok
+    def notice_gate(self) -> bool:
+        """While the responsible-use notice is still open, show it instead of starting a run."""
+        if not self.guidelines_read and not isinstance(self.screen, GuidelinesScreen):
+            self.push_screen(GuidelinesScreen(self.guidelines_version, self.guidelines_text),
+                             self._guidelines_done)
+        return self.guidelines_read
 
     # ----------------------------------------------------------------- helpers
     def say(self, message: str) -> None:
@@ -382,12 +371,12 @@ class ScraperApp(App):
 
     @on(Button.Pressed, "#start-scrape")
     def start_scrape_pressed(self) -> None:
-        if self.terms_gate():
+        if self.notice_gate():
             self.run_scrape()
 
     @on(Button.Pressed, "#start-offensive")
     def start_offensive_pressed(self) -> None:
-        if self.terms_gate():
+        if self.notice_gate():
             self.run_offensive()
 
     @on(Button.Pressed, "#stop-scrape")
@@ -470,7 +459,7 @@ class ScraperApp(App):
         self._api = None
 
     def action_start(self) -> None:
-        if not self.terms_gate():
+        if not self.notice_gate():
             return
         if self.busy:
             self.say("[yellow]A job is already running.[/yellow]")
@@ -715,34 +704,34 @@ class ScraperApp(App):
 HELP_TEXT = """\
 anonymized-tweet-scraper {version}
 
-Usage: anonymized-tweet-scraper [--version | --paths | --terms | --help]
+Usage: anonymized-tweet-scraper [--version | --paths | --guidelines | --help]
 
 Without options, opens the full-screen app. Everything (scraping, accounts,
 settings) is done inside the app; there is no command-line scraping mode.
 
 Options:
-  --version   print the version and exit
-  --paths     print where settings, accounts and CSV files are stored, and exit
-  --terms     print the terms of use and exit
-  --help      show this help and exit
+  --version     print the version and exit
+  --paths       print where settings, accounts and CSV files are stored, and exit
+  --guidelines  print the responsible-use guidelines and exit
+  --help        show this help and exit
 """
 
 
 def paths_text() -> str:
     from .config import load_settings as _load
 
-    version, _ = terms.load_terms()
-    info = terms.accepted_info(APP_DIR)
+    version, _ = guidelines.load_guidelines()
+    info = guidelines.read_info(APP_DIR)
     if info and info[0] == version:
-        state = f"accepted v{version} on {info[1]}"
+        state = f"v{version} notice read on {info[1]}"
     elif info:
-        state = f"v{info[0]} accepted earlier; v{version} not accepted yet"
+        state = f"v{info[0]} notice read earlier; v{version} not shown yet"
     else:
-        state = f"v{version} not accepted yet"
+        state = f"v{version} notice not shown yet"
     return (f"Mode:                {MODE}\n"
             f"Settings & accounts: {APP_DIR}\n"
             f"CSV output:          {_load().output_dir}\n"
-            f"Terms of use:        {state}\n")
+            f"Responsible use:     {state}\n")
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -754,8 +743,8 @@ def main(argv: list[str] | None = None) -> int:
         if args == ["--paths"]:
             print(paths_text(), end="")
             return 0
-        if args == ["--terms"]:
-            print(terms.load_terms()[1], end="")
+        if args in (["--guidelines"], ["--terms"]):  # --terms: old name, kept for scripts
+            print(guidelines.load_guidelines()[1], end="")
             return 0
         if args in (["--help"], ["-h"]):
             print(HELP_TEXT.format(version=__version__), end="")

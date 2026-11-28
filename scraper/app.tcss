@@ -76,12 +76,12 @@ Screen {
     display: none;
 }
 
-/* first-run terms of use */
-TermsScreen {
+/* first-run responsible-use notice */
+GuidelinesScreen {
     align: center middle;
 }
 
-#terms-box {
+#guidelines-box {
     width: 90%;
     max-width: 110;
     height: 90%;
@@ -90,7 +90,7 @@ TermsScreen {
     padding: 0 1;
 }
 
-#terms-scroll {
+#guidelines-scroll {
     height: 1fr;
     margin-bottom: 1;
 }
