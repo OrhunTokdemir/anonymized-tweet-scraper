@@ -5,9 +5,6 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
-### Fixed
-- Starting the program without a terminal (for example by double-clicking it in a file manager) no longer leaves an invisible process using a full CPU core. It now reopens itself in a new terminal window on both Linux and Windows. On Windows a double-click opens it in Windows Terminal when installed, instead of the old console window that displays the app poorly. If no terminal can be opened, it exits right away with a message (a desktop notification on Linux, a message box on Windows).
-
 ## [1.1.0] - 2026-11-28
 
 ### Changed
@@ -20,6 +17,9 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 - DOI shown in the README's citation section (it was already in `CITATION.cff` and the badge).
 - AI-assistance disclosure in the README.
 - README states near the top that the output is pseudonymized, not fully anonymous.
+
+### Fixed
+- Starting the program without a terminal (for example by double-clicking it in a file manager) no longer leaves an invisible process using a full CPU core. It now reopens itself in a new terminal window on both Linux and Windows. On Windows a double-click opens it in Windows Terminal when installed, instead of the old console window that displays the app poorly. If no terminal can be opened, it exits right away with a message (a desktop notification on Linux, a message box on Windows).
 
 ## [1.0.0] - 2026-11-28
 
