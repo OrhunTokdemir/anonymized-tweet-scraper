@@ -734,6 +734,150 @@ def paths_text() -> str:
             f"Responsible use:     {state}\n")
 
 
+RELAUNCH_ENV = "ATS_RELAUNCHED"
+NO_TERMINAL_MSG = ("anonymized-tweet-scraper is a terminal app and no terminal window "
+                   "could be opened. Run it from a terminal.")
+
+# Linux/POSIX: (program, arguments placed before the command to run), tried in order.
+_TERMINALS: list[tuple[str, list[str]]] = [
+    ("x-terminal-emulator", ["-e"]),
+    ("gnome-terminal", ["--"]),
+    ("konsole", ["-e"]),
+    ("xfce4-terminal", ["-x"]),
+    ("kitty", []),
+    ("alacritty", ["-e"]),
+    ("wezterm", ["start", "--"]),
+    ("foot", []),
+    ("xterm", ["-e"]),
+]
+
+
+def _own_command() -> list[str]:
+    """The command that starts this program again."""
+    if getattr(sys, "frozen", False):
+        return [sys.executable]
+    return [sys.executable, "-m", "scraper"]
+
+
+def _terminal_command(which: Callable[[str], str | None], env: dict[str, str],
+                      prog: list[str], platform: str | None = None) -> list[str] | None:
+    """Command that opens `prog` in a terminal window, or None if no terminal is found.
+
+    On Windows this is Windows Terminal; None there means "use a plain new console".
+    """
+    if (platform or sys.platform) == "win32":
+        wt = which("wt.exe")
+        if not wt:
+            return None
+        # wt splits its command line on ';' unless it is escaped.
+        esc = [a.replace(";", r"\;") for a in (os.getcwd(), *prog)]
+        return [wt, "-d", *esc]
+    user_term = env.get("TERMINAL", "").strip()
+    if user_term and which(user_term):
+        return [user_term, "-e", *prog]
+    for name, args in _TERMINALS:
+        path = which(name)
+        if path:
+            return [path, *args, *prog]
+    return None
+
+
+def _has_terminal() -> bool:
+    try:
+        return sys.stdin.isatty() and sys.stdout.isatty()
+    except (AttributeError, ValueError):  # stream missing or closed
+        return False
+
+
+def _console_process_count() -> int:
+    """Windows: how many processes share this console window (0 if unknown)."""
+    import ctypes
+    from ctypes import wintypes
+
+    buf = (wintypes.DWORD * 8)()
+    return int(ctypes.windll.kernel32.GetConsoleProcessList(buf, 8))
+
+
+def _should_relaunch() -> bool:
+    """True when the app must reopen in a new terminal window instead of running here.
+
+    - No terminal at all (double-click on Linux, launchers, redirected output):
+      Textual would read end-of-file from stdin in a tight loop forever, using a
+      full CPU core with no window to close.
+    - Windows: double-clicked into a fresh legacy console window, which shows the
+      app poorly, while Windows Terminal is installed.
+    """
+    if not _has_terminal():
+        return True
+    if sys.platform != "win32" or os.environ.get(RELAUNCH_ENV) or os.environ.get("WT_SESSION"):
+        return False
+    import shutil
+
+    try:
+        count = _console_process_count()
+    except Exception:  # noqa: BLE001 - any ctypes failure means "leave it alone"
+        return False
+    # Only this program in the console = it was double-clicked (frozen builds have a
+    # bootloader + child process). Started from cmd/PowerShell, the shell counts too.
+    limit = 2 if getattr(sys, "frozen", False) else 1
+    return 0 < count <= limit and shutil.which("wt.exe") is not None
+
+
+def _report_no_terminal() -> None:
+    import shutil
+    import subprocess
+
+    print(NO_TERMINAL_MSG, file=sys.stderr)
+    if sys.platform == "win32":
+        try:
+            import ctypes
+
+            ctypes.windll.user32.MessageBoxW(None, NO_TERMINAL_MSG, "anonymized-tweet-scraper", 0x30)
+        except Exception:  # noqa: BLE001
+            pass
+        return
+    notify = shutil.which("notify-send")
+    if notify:
+        try:
+            subprocess.run([notify, "anonymized-tweet-scraper", NO_TERMINAL_MSG],
+                           timeout=5, check=False,
+                           stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        except (OSError, subprocess.SubprocessError):
+            pass
+
+
+def _relaunch_in_terminal() -> int:
+    """Reopen this program in a new terminal window. 0 = reopened, 1 = not possible."""
+    import shutil
+    import subprocess
+
+    if not os.environ.get(RELAUNCH_ENV):  # never try twice in a row
+        prog = _own_command()
+        cmd = _terminal_command(shutil.which, dict(os.environ), prog)
+        env = {**os.environ, RELAUNCH_ENV: "1"}
+        if getattr(sys, "frozen", False):
+            # The new copy must unpack itself instead of reusing this copy's temp
+            # folder, which is deleted when this process exits.
+            env["PYINSTALLER_RESET_ENVIRONMENT"] = "1"
+        try:
+            if sys.platform == "win32":
+                if cmd:  # Windows Terminal
+                    subprocess.Popen(cmd, env=env, creationflags=(
+                        subprocess.CREATE_NO_WINDOW | subprocess.CREATE_NEW_PROCESS_GROUP))
+                else:  # always available: a plain new console window
+                    subprocess.Popen(prog, env=env, creationflags=subprocess.CREATE_NEW_CONSOLE)
+                return 0
+            if cmd:
+                subprocess.Popen(cmd, env=env, stdin=subprocess.DEVNULL,
+                                 stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                                 start_new_session=True)
+                return 0
+        except OSError:
+            pass
+    _report_no_terminal()
+    return 1
+
+
 def main(argv: list[str] | None = None) -> int:
     args = sys.argv[1:] if argv is None else argv
     if args:
@@ -751,6 +895,8 @@ def main(argv: list[str] | None = None) -> int:
             return 0
         print(HELP_TEXT.format(version=__version__), end="", file=sys.stderr)
         return 2
+    if _should_relaunch():
+        return _relaunch_in_terminal()
     ensure_app_dir()
     ScraperApp().run()
     return 0

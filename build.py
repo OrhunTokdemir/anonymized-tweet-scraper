@@ -182,8 +182,9 @@ def readme_text(ver: str, portable: bool) -> str:
                  "  CSV files:             <your Documents folder>/anonymized-posts/\n"
                  "                         (e.g. ~/Belgeler/anonymized-posts on a Turkish system)")
     if IS_WINDOWS:
-        start = (f"Open Windows Terminal in this folder and run:  {cmd}\n"
-                 "  (Windows 11 has it built in; on Windows 10 install \"Windows Terminal\".\n"
+        start = (f"Double-click {EXE}, or open Windows Terminal in this folder and run:  {cmd}\n"
+                 "  (A double-click opens it in Windows Terminal when installed.\n"
+                 "  Windows 11 has it built in; on Windows 10 install \"Windows Terminal\".\n"
                  "  The old console window displays the app poorly.)")
         extra = ("\nWindows SmartScreen: the program is not code-signed, so Windows may warn\n"
                  "on first start. Click \"More info\" -> \"Run anyway\" if you trust this download\n"

@@ -84,8 +84,8 @@ Get-FileHash .\anonymized-tweet-scraper-v1.1.0-windows-x86_64.zip   # Windows: c
 
 **Run it**
 
-- Linux: `tar xzf anonymized-tweet-scraper-v*-linux-x86_64.tar.gz && cd anonymized-tweet-scraper && ./anonymized-tweet-scraper`. Optionally move the standard program onto your PATH: `mv anonymized-tweet-scraper ~/.local/bin/`.
-- Windows: unzip, open **Windows Terminal** in the folder and run `.\anonymized-tweet-scraper.exe`. The old console window displays the app poorly. The program is not code-signed, so SmartScreen may warn on first start ("More info" → "Run anyway"); check the checksum first.
+- Linux: `tar xzf anonymized-tweet-scraper-v*-linux-x86_64.tar.gz && cd anonymized-tweet-scraper && ./anonymized-tweet-scraper`. Optionally move the standard program onto your PATH: `mv anonymized-tweet-scraper ~/.local/bin/`. If you double-click it in a file manager, it opens in a terminal window.
+- Windows: unzip and double-click `anonymized-tweet-scraper.exe`; it opens in **Windows Terminal** when installed (Windows 11 has it built in). You can also open Windows Terminal in the folder and run `.\anonymized-tweet-scraper.exe`. The old console window displays the app poorly. The program is not code-signed, so SmartScreen may warn on first start ("More info" → "Run anyway"); check the checksum first.
 
 `anonymized-tweet-scraper --paths` prints the exact folders on your computer, and `--version` the version. Keep `.env` and `accounts.db` private: they hold your Twitter account cookies.
 
